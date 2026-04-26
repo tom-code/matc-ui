@@ -27,19 +27,17 @@ jobs:
     name: Rust check
     runs-on: macos-latest
     steps:
-      # Checkout this repo at the default workspace path, e.g.:
-      #   /home/runner/work/matc-ui/matc-ui/
-      - uses: actions/checkout@v4
-
-      # Checkout rust-matc as a sibling so the relative path dep resolves:
-      #   src-tauri/Cargo.toml: path = "../../rust-matc"
-      # That resolves to ../rust-matc relative to the repo root.
-      # NOTE: if rust-matc is private or in a different account, replace
-      # the repository value and add a `token: ${{ secrets.PAT }}` line.
+      # Check out both repos as siblings inside the workspace so that
+      # src-tauri/Cargo.toml's path = "../../rust-matc" resolves correctly:
+      #   $GITHUB_WORKSPACE/matc-ui/src-tauri/ -> ../../rust-matc -> $GITHUB_WORKSPACE/rust-matc/
       - uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/rust-matc
-          path: ../rust-matc
+          path: matc-ui
+
+      - uses: actions/checkout@v4
+        with:
+          repository: tom-code/rust-matc
+          path: rust-matc
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,13 +45,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: matc-ui/src-tauri -> target
 
       - name: fmt
+        working-directory: matc-ui
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
       - name: check
+        working-directory: matc-ui
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
       - name: clippy
+        working-directory: matc-ui
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
