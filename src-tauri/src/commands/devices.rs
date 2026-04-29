@@ -25,7 +25,7 @@ pub struct DeviceInfoDto {
 
 #[tauri::command]
 pub async fn list_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceDto>, String> {
-    let dm = state.devman.lock().await;
+    let dm = &state.devman;
     let devices = dm.list_devices().map_err(|e| e.to_string())?;
     Ok(devices
         .into_iter()
@@ -41,7 +41,7 @@ pub async fn get_device_info(
     let state = state.inner().clone();
 
     let (name, address) = {
-        let dm = state.devman.lock().await;
+        let dm = &state.devman;
         let dev = dm
             .get_device(node_id)
             .map_err(|e| e.to_string())?
@@ -51,7 +51,22 @@ pub async fn get_device_info(
 
     let conn = get_conn_with_retry(&state, node_id).await?;
 
-    let vendor_name = read_string(&conn, 0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME).await;
+    let vendor_name = match tokio::time::timeout(
+        Duration::from_secs(4),
+        conn.read_request2(0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME),
+    ).await {
+        Ok(Ok(matc::tlv::TlvItemValue::String(s))) => s,
+        Ok(Ok(v)) => format!("{:?}", v),
+        Ok(Err(e)) => {
+            AppState::drop_connection(&state, node_id).await;
+            return Err(e.to_string());
+        }
+        Err(_) => {
+            AppState::drop_connection(&state, node_id).await;
+            return Err("read timed out".to_string());
+        }
+    };
+
     let product_name = read_string(&conn, 0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME).await;
     let sw_version = read_string(&conn, 0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_SOFTWAREVERSIONSTRING).await;
 
@@ -77,7 +92,7 @@ pub async fn rename_device(
     node_id: u64,
     name: String,
 ) -> Result<(), String> {
-    let dm = state.devman.lock().await;
+    let dm = &state.devman;
     dm.rename_device(node_id, &name).map_err(|e| e.to_string())
 }
 
@@ -88,17 +103,8 @@ pub async fn remove_device(
 ) -> Result<(), String> {
     let state = state.inner().clone();
     AppState::drop_connection(&state, node_id).await;
-    let dm = state.devman.lock().await;
+    let dm = &state.devman;
     dm.remove_device(node_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn check_reachability(
-    state: State<'_, Arc<AppState>>,
-    node_id: u64,
-) -> Result<bool, String> {
-    let dm = state.devman.lock().await;
-    Ok(dm.discover_device(node_id, Duration::from_secs(10)).await.is_ok())
 }
 
 async fn get_conn_with_retry(

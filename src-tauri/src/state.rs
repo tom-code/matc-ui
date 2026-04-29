@@ -6,14 +6,14 @@ use tokio::time::{timeout, Duration};
 use matc::{controller::Connection, devman::DeviceManager};
 
 pub struct AppState {
-    pub devman: Mutex<DeviceManager>,
+    pub devman: Arc<DeviceManager>,
     pub connections: Mutex<HashMap<u64, Arc<Connection>>>,
 }
 
 impl AppState {
     pub fn new(devman: DeviceManager) -> Self {
         Self {
-            devman: Mutex::new(devman),
+            devman: Arc::new(devman),
             connections: Mutex::new(HashMap::new()),
         }
     }
@@ -29,12 +29,9 @@ impl AppState {
                 return Ok(conn.clone());
             }
         }
-        let conn = {
-            let dm = state.devman.lock().await;
-            timeout(Duration::from_secs(12), dm.connect(node_id))
-                .await
-                .map_err(|_| anyhow::anyhow!("connection timed out"))??
-        };
+        let conn = timeout(Duration::from_secs(12), state.devman.connect(node_id))
+            .await
+            .map_err(|_| anyhow::anyhow!("connection timed out"))??;
         let conn = Arc::new(conn);
         state.connections.lock().await.insert(node_id, conn.clone());
         Ok(conn)
@@ -50,15 +47,11 @@ impl AppState {
             conns.get(&node_id).cloned()
         };
         if let Some(conn) = cached {
-            // verify by trying a basic operation; if it fails, reconnect
             return Ok(conn);
         }
-        let conn = {
-            let dm = state.devman.lock().await;
-            timeout(Duration::from_secs(12), dm.connect(node_id))
-                .await
-                .map_err(|_| anyhow::anyhow!("connection timed out"))??
-        };
+        let conn = timeout(Duration::from_secs(12), state.devman.connect(node_id))
+            .await
+            .map_err(|_| anyhow::anyhow!("connection timed out"))??;
         let conn = Arc::new(conn);
         state.connections.lock().await.insert(node_id, conn.clone());
         Ok(conn)

@@ -1,3 +1,5 @@
+export type DeviceConnectionStatus = 'unknown' | 'checking' | 'connected' | 'failed'
+
 export interface DeviceDto {
   node_id: number
   name: string
@@ -58,4 +60,31 @@ export interface LogEntry {
   level: string
   target: string
   message: string
+}
+
+// --- Command schema types (from Tauri clusters commands) ---
+
+export interface CommandDto {
+  id: number
+  name: string
+}
+
+// Discriminated union matching the Rust FieldKind serde shape.
+export type FieldKind =
+  | { type: 'u8' | 'u16' | 'u32' | 'u64' | 'i8' | 'i16' | 'i32' | 'i64' | 'bool' | 'string' | 'octet_string' }
+  | { type: 'enum'; name: string; variants: [number, string][] }
+  | { type: 'bitmap'; name: string; bits: [number, string][] }
+  | { type: 'struct'; name: string }
+  | { type: 'list'; entry_type: string }
+
+export interface CommandFieldDto {
+  tag: number
+  name: string
+  kind: FieldKind
+  optional: boolean
+  nullable: boolean
+}
+
+export interface CommandSchemaDto {
+  fields: CommandFieldDto[]
 }

@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macos
+          - os: ubuntu-22.04
+            label: linux
+          - os: windows-latest
+            label: windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: matc-ui
+
+      - uses: actions/checkout@v4
+        with:
+          repository: tom-code/rust-matc
+          path: rust-matc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: matc-ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: matc-ui/src-tauri -> target
+
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          libssl-dev
+          libayatana-appindicator3-dev
+          librsvg2-dev
+          libdbus-1-dev
+          libudev-dev
+          pkg-config
+          build-essential
+
+      - name: npm install
+        working-directory: matc-ui
+        run: npm ci
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        working-directory: matc-ui
+        env:
+          APPLE_SIGNING_IDENTITY: ""
+        run: npm run tauri build
+
+      - name: Build (Linux / Windows)
+        if: matrix.os != 'macos-latest'
+        working-directory: matc-ui
+        run: npm run tauri build
+
+      - name: Create portable zip (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd "matc-ui/src-tauri/target/release/bundle/macos"
+          zip -r "${GITHUB_WORKSPACE}/matc-ui-${VERSION}-macos-portable.zip" "matc-ui.app"
+
+      - name: Create portable zip (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp matc-ui/src-tauri/target/release/matc-ui .
+          zip "matc-ui-${VERSION}-linux-portable.zip" matc-ui
+
+      - name: Create portable zip (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          Compress-Archive `
+            -Path "matc-ui\src-tauri\target\release\matc-ui.exe" `
+            -DestinationPath "matc-ui-${version}-windows-portable.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matc-ui-${{ matrix.label }}
+          if-no-files-found: warn
+          path: |
+            matc-ui/src-tauri/target/release/bundle/**/*.dmg
+            matc-ui/src-tauri/target/release/bundle/**/*.deb
+            matc-ui/src-tauri/target/release/bundle/**/*.AppImage
+            matc-ui/src-tauri/target/release/bundle/**/*.msi
+            matc-ui/src-tauri/target/release/bundle/**/*-setup.exe
+            *-portable.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: artifacts/**

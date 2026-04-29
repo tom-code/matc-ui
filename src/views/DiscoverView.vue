@@ -18,7 +18,7 @@ const bleTimeout = ref(10)
 // Commission dialog state
 const showCommissionDialog = ref(false)
 const commissionTarget = ref<{ address?: string; addresses?: string[]; pairingCode?: string; isBle?: boolean } | null>(null)
-const commissionForm = ref({ name: '', node_id: 300, pin: 0, wifi_ssid: '', wifi_password: '' })
+const commissionForm = ref({ name: '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' })
 const commissioning = ref(false)
 const commissionError = ref<string | null>(null)
 
@@ -38,14 +38,14 @@ function openCommission(device: DiscoveredDeviceDto) {
     address: allAddresses[0],
     isBle: false,
   }
-  commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, wifi_ssid: '', wifi_password: '' }
+  commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' }
   commissionError.value = null
   showCommissionDialog.value = true
 }
 
 function openCommissionBle(device: BleDeviceDto) {
   commissionTarget.value = { isBle: true }
-  commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, wifi_ssid: '', wifi_password: '' }
+  commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' }
   commissionError.value = null
   showCommissionDialog.value = true
 }
@@ -59,7 +59,7 @@ async function doCommission() {
 
     if (target.isBle) {
       await invoke('commission_ble', {
-        pairingCode: commissionForm.value.wifi_ssid,
+        pairingCode: commissionForm.value.pairing_code,
         nodeId,
         name,
         wifiSsid,
@@ -205,7 +205,7 @@ async function doCommission() {
 
         <template v-if="commissionTarget?.isBle">
           <n-form-item label="Pairing Code">
-            <n-input v-model:value="commissionForm.wifi_ssid" placeholder="e.g. 0251-520-0076" />
+            <n-input v-model:value="commissionForm.pairing_code" placeholder="e.g. 0251-520-0076" />
           </n-form-item>
           <n-form-item label="Wi-Fi SSID">
             <n-input v-model:value="commissionForm.wifi_ssid" placeholder="Home network" />

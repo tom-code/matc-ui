@@ -13,7 +13,7 @@ pub async fn commission_by_code(
 ) -> Result<DeviceDto, String> {
     let state = state.inner().clone();
     let conn = {
-        let dm = state.devman.lock().await;
+        let dm = &state.devman;
         dm.commission_with_code(&pairing_code, node_id, &name)
             .await
             .map_err(|e| e.to_string())?
@@ -21,8 +21,7 @@ pub async fn commission_by_code(
     let conn = Arc::new(conn);
     state.connections.lock().await.insert(node_id, conn);
 
-    let dm = state.devman.lock().await;
-    let dev = dm
+    let dev = state.devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
@@ -39,7 +38,7 @@ pub async fn commission_by_address(
 ) -> Result<DeviceDto, String> {
     let state = state.inner().clone();
     let conn = {
-        let dm = state.devman.lock().await;
+        let dm = &state.devman;
         dm.commission(&address, pin, node_id, &name)
             .await
             .map_err(|e| e.to_string())?
@@ -47,8 +46,7 @@ pub async fn commission_by_address(
     let conn = Arc::new(conn);
     state.connections.lock().await.insert(node_id, conn);
 
-    let dm = state.devman.lock().await;
-    let dev = dm
+    let dev = state.devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
@@ -70,7 +68,7 @@ pub async fn commission_ble(
     let creds = NetworkCreds::WiFi { ssid: wifi_ssid.into(), creds: wifi_password.into() };
     let state = state.inner().clone();
     let conn = {
-        let dm = state.devman.lock().await;
+        let dm = &state.devman;
         dm.commission_ble_with_code(&pairing_code, node_id, &name, creds)
             .await
             .map_err(|e| e.to_string())?
@@ -78,8 +76,7 @@ pub async fn commission_ble(
     let conn = Arc::new(conn);
     state.connections.lock().await.insert(node_id, conn);
 
-    let dm = state.devman.lock().await;
-    let dev = dm
+    let dev = state.devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;

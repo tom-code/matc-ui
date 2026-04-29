@@ -9,10 +9,11 @@ mod state;
 
 use commands::{
     attributes::{read_attribute_tree, read_single_attribute},
+    clusters::{get_command_schema, list_cluster_commands},
     commission::{commission_ble, commission_by_address, commission_by_code},
-    devices::{check_reachability, get_device_info, list_devices, remove_device, rename_device},
+    devices::{get_device_info, list_devices, remove_device, rename_device},
     discovery::{discover_mdns, scan_ble},
-    invoke::invoke_command,
+    invoke::{invoke_command, invoke_command_typed},
     logs::{clear_logs, get_log_level, get_recent_logs, set_log_level},
 };
 use state::AppState;
@@ -60,19 +61,21 @@ pub fn run() {
             get_device_info,
             rename_device,
             remove_device,
-            check_reachability,
             commission_by_code,
             commission_by_address,
             commission_ble,
             read_attribute_tree,
             read_single_attribute,
             invoke_command,
+            invoke_command_typed,
             discover_mdns,
             scan_ble,
             get_recent_logs,
             clear_logs,
             set_log_level,
             get_log_level,
+            list_cluster_commands,
+            get_command_schema,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

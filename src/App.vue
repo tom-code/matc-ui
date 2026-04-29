@@ -1,7 +1,18 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import type { MenuOption } from 'naive-ui'
+import { getVersion } from '@tauri-apps/api/app'
 import { useThemeStore } from './stores/theme'
+
+const version = ref('')
+onMounted(async () => {
+  try {
+    version.value = await getVersion()
+  } catch {
+    // not running inside Tauri (e.g. plain vite dev server)
+  }
+})
 
 const router = useRouter()
 const route = useRoute()
@@ -36,6 +47,7 @@ function activeKey() {
           content-style="padding: 16px 0"
         >
           <div class="logo">matc-ui</div>
+          <div v-if="version" class="logo-version">v{{ version }}</div>
           <n-menu
             :options="menuOptions"
             :value="activeKey()"
@@ -85,5 +97,12 @@ html, body, #app {
 
 .view-container {
   max-width: 1200px;
+}
+
+.logo-version {
+  padding: 0 16px 12px;
+  font-size: 11px;
+  color: var(--n-text-color-3);
+  letter-spacing: 0.2px;
 }
 </style>

@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useMessage } from 'naive-ui'
 import { useDevicesStore } from '../stores/devices'
 import DeviceCard from '../components/DeviceCard.vue'
 
 const store = useDevicesStore()
-const message = useMessage()
 
-onMounted(() => store.fetchDevices())
+onMounted(async () => {
+  await store.fetchDevices()
+  store.probeAllDevices()
+})
 
-async function handleReadInfo(nodeId: number) {
-  try {
-    await store.fetchDeviceInfo(nodeId)
-  } catch (e) {
-    message.error(`Failed to read device info: ${e}`)
-  }
+async function handleRefresh() {
+  await store.fetchDevices()
+  store.probeAllDevices()
+}
+
+function handleProbe(nodeId: number) {
+  store.fetchDeviceInfo(nodeId).catch(() => undefined)
 }
 </script>
 
@@ -22,7 +24,7 @@ async function handleReadInfo(nodeId: number) {
   <div class="view-container">
     <div class="view-header">
       <n-h2 style="margin: 0">Commissioned Devices</n-h2>
-      <n-button @click="store.fetchDevices()" :loading="store.loading" size="small">
+      <n-button @click="handleRefresh" :loading="store.loading" size="small">
         Refresh
       </n-button>
     </div>
@@ -44,10 +46,11 @@ async function handleReadInfo(nodeId: number) {
           :key="device.node_id"
           :device="device"
           :info="store.deviceInfo[device.node_id]"
-          :loading="!!store.loadingInfo[device.node_id]"
-          @read-info="handleReadInfo(device.node_id)"
+          :status="store.deviceStatus[device.node_id]"
+          :status-error="store.statusError[device.node_id]"
           @rename="(name) => store.renameDevice(device.node_id, name)"
           @remove="store.removeDevice(device.node_id)"
+          @probe="handleProbe(device.node_id)"
         />
       </div>
     </n-spin>

@@ -5,11 +5,16 @@ import { invoke } from '@tauri-apps/api/core'
 import type { EndpointTree } from '../types'
 import AttributeTree from '../components/AttributeTree.vue'
 import CommandPanel from '../components/CommandPanel.vue'
+import { useDevicesStore } from '../stores/devices'
 
 const props = defineProps<{ nodeId: string }>()
 const router = useRouter()
+const store = useDevicesStore()
 
 const nodeId = Number(props.nodeId)
+
+const device = computed(() => store.devices.find(d => d.node_id === nodeId))
+const deviceName = computed(() => device.value?.name ?? `Device ${nodeId}`)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const tree = ref<EndpointTree | null>(null)
@@ -36,7 +41,10 @@ const friendlyError = computed(() => {
   return error.value
 })
 
-onMounted(loadTree)
+onMounted(async () => {
+  if (store.devices.length === 0) await store.fetchDevices()
+  loadTree()
+})
 </script>
 
 <template>
@@ -45,7 +53,8 @@ onMounted(loadTree)
       <n-button quaternary @click="router.push('/devices')" style="margin-right: 8px">
         &lt;- Back
       </n-button>
-      <n-h2 style="margin: 0">Device {{ nodeId }}</n-h2>
+      <n-h2 style="margin: 0">{{ deviceName }}</n-h2>
+      <n-tag size="small" :bordered="false">Node {{ nodeId }}</n-tag>
       <n-tag v-if="error && !loading" type="error" size="small">Unreachable</n-tag>
       <n-button @click="loadTree" :loading="loading" size="small">Refresh</n-button>
     </div>
@@ -73,7 +82,7 @@ onMounted(loadTree)
       </div>
       <div class="cmd-panel">
         <n-card title="Send Command" :segmented="{ content: true }">
-          <CommandPanel :node-id="nodeId" />
+          <CommandPanel :node-id="nodeId" :tree="tree" />
         </n-card>
       </div>
     </div>
