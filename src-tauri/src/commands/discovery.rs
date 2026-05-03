@@ -29,7 +29,7 @@ pub struct BleDeviceDto {
 
 #[tauri::command]
 pub async fn discover_mdns(timeout_secs: u64) -> Result<Vec<DiscoveredDeviceDto>, String> {
-    let timeout = Duration::from_secs(timeout_secs.max(2).min(30));
+    let timeout = Duration::from_secs(timeout_secs.clamp(2, 30));
     let devices = discover::discover_commissionable(timeout)
         .await
         .map_err(|e| e.to_string())?;
@@ -54,7 +54,7 @@ pub async fn discover_mdns(timeout_secs: u64) -> Result<Vec<DiscoveredDeviceDto>
 #[cfg(feature = "ble")]
 #[tauri::command]
 pub async fn scan_ble(timeout_secs: u64) -> Result<Vec<BleDeviceDto>, String> {
-    let timeout = Duration::from_secs(timeout_secs.max(2).min(30));
+    let timeout = Duration::from_secs(timeout_secs.clamp(2, 30));
     let devices = matc::ble::scan_commissionable(timeout)
         .await
         .map_err(|e| e.to_string())?;
