@@ -15,6 +15,27 @@ const nodeId = Number(props.nodeId)
 
 const device = computed(() => store.devices.find(d => d.node_id === nodeId))
 const deviceName = computed(() => device.value?.name ?? `Device ${nodeId}`)
+
+const renameMode = ref(false)
+const newName = ref('')
+
+function startRename() {
+  newName.value = deviceName.value
+  renameMode.value = true
+}
+
+async function confirmRename() {
+  if (newName.value.trim()) {
+    await store.renameDevice(nodeId, newName.value.trim())
+  }
+  renameMode.value = false
+}
+
+async function handleRemove() {
+  await store.removeDevice(nodeId)
+  router.push('/devices')
+}
+
 const loading = ref(false)
 const error = ref<string | null>(null)
 const tree = ref<EndpointTree | null>(null)
@@ -57,7 +78,24 @@ onMounted(async () => {
       <n-tag size="small" :bordered="false">Node {{ nodeId }}</n-tag>
       <n-tag v-if="error && !loading" type="error" size="small">Unreachable</n-tag>
       <n-button @click="loadTree" :loading="loading" size="small">Refresh</n-button>
+      <n-button size="small" @click="startRename">Rename</n-button>
+      <n-popconfirm @positive-click="handleRemove">
+        <template #trigger>
+          <n-button size="small" type="error" ghost>Remove</n-button>
+        </template>
+        Remove '{{ deviceName }}' from registry?
+      </n-popconfirm>
     </div>
+
+    <n-modal v-model:show="renameMode" preset="dialog" title="Rename Device">
+      <n-input v-model:value="newName" @keyup.enter="confirmRename" />
+      <template #action>
+        <n-space>
+          <n-button @click="renameMode = false">Cancel</n-button>
+          <n-button type="primary" @click="confirmRename">Save</n-button>
+        </n-space>
+      </template>
+    </n-modal>
 
     <n-alert v-if="error" type="error" :title="friendlyError" style="margin-bottom: 16px">
       <n-button size="small" type="error" ghost @click="loadTree" :loading="loading"
@@ -66,26 +104,22 @@ onMounted(async () => {
       </n-button>
     </n-alert>
 
-    <div class="detail-layout">
-      <div class="attr-panel">
-        <n-card title="Attribute Tree" :segmented="{ content: true }">
-          <n-spin :show="loading">
-            <div v-if="!loading && !tree && !error" class="hint">
-              Click Refresh to load attributes.
-            </div>
-            <div v-if="!loading && !tree && error" class="hint">
-              Attribute data unavailable - device did not respond.
-            </div>
-            <AttributeTree v-if="tree" :tree="tree" />
-          </n-spin>
-        </n-card>
-      </div>
-      <div class="cmd-panel">
-        <n-card title="Send Command" :segmented="{ content: true }">
-          <CommandPanel :node-id="nodeId" :tree="tree" />
-        </n-card>
-      </div>
-    </div>
+    <n-tabs type="line" default-value="attributes" animated :pane-style="{ paddingTop: '16px' }">
+      <n-tab-pane name="attributes" tab="Attributes">
+        <n-spin :show="loading">
+          <div v-if="!loading && !tree && !error" class="hint">
+            Click Refresh to load attributes.
+          </div>
+          <div v-if="!loading && !tree && error" class="hint">
+            Attribute data unavailable - device did not respond.
+          </div>
+          <AttributeTree v-if="tree" :tree="tree" />
+        </n-spin>
+      </n-tab-pane>
+      <n-tab-pane name="commands" tab="Send Command">
+        <CommandPanel :node-id="nodeId" :tree="tree" />
+      </n-tab-pane>
+    </n-tabs>
   </div>
 </template>
 
@@ -97,22 +131,9 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
-.detail-layout {
-  display: grid;
-  grid-template-columns: 1fr 400px;
-  gap: 16px;
-  align-items: start;
-}
-
 .hint {
   color: var(--n-text-color-disabled);
   padding: 20px;
   text-align: center;
-}
-
-@media (max-width: 900px) {
-  .detail-layout {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

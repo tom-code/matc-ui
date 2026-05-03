@@ -13,7 +13,8 @@ use crate::state::AppState;
 pub struct AttrNode {
     pub id: u32,
     pub name: String,
-    pub value: String,
+    pub value: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,11 +93,11 @@ pub async fn read_attribute_tree(
 
             let mut attr_nodes = Vec::new();
             for (attr_id, attr_name) in attr_list {
-                let value = match conn.read_request2(ep, cluster_id, attr_id).await {
-                    Ok(v) => codec::decode_attribute_json(cluster_id, attr_id, &v),
-                    Err(e) => format!("<error: {}>", e),
+                let (value, error) = match conn.read_request2(ep, cluster_id, attr_id).await {
+                    Ok(v) => (Some(codec::decode_attribute_json(cluster_id, attr_id, &v)), None),
+                    Err(e) => (None, Some(e.to_string())),
                 };
-                attr_nodes.push(AttrNode { id: attr_id, name: attr_name.to_string(), value });
+                attr_nodes.push(AttrNode { id: attr_id, name: attr_name.to_string(), value, error });
             }
 
             cluster_nodes.push(ClusterNode {

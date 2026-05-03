@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DeviceDto, DeviceInfoDto, DeviceConnectionStatus } from '../types'
+import { statusTagType, statusLabel } from '../utils/deviceStatus'
 
 const props = defineProps<{
   device: DeviceDto
@@ -33,24 +34,6 @@ function confirmRename() {
 }
 
 const checking = computed(() => props.status === 'checking')
-
-const statusTagType = computed(() => {
-  switch (props.status) {
-    case 'connected': return 'success'
-    case 'failed': return 'error'
-    case 'checking': return 'info'
-    default: return 'default'
-  }
-})
-
-const statusLabel = computed(() => {
-  switch (props.status) {
-    case 'connected': return 'Connected'
-    case 'failed': return 'Failed'
-    case 'checking': return 'Checking'
-    default: return 'Not checked'
-  }
-})
 </script>
 
 <template>
@@ -59,17 +42,17 @@ const statusLabel = computed(() => {
       <n-space size="small" align="center">
         <n-tooltip v-if="status === 'failed' && statusError" trigger="hover">
           <template #trigger>
-            <n-tag size="small" :bordered="false" :type="statusTagType">
-              {{ statusLabel }}
+            <n-tag size="small" :bordered="false" :type="statusTagType(status)">
+              {{ statusLabel(status) }}
             </n-tag>
           </template>
           {{ statusError }}
         </n-tooltip>
-        <n-tag v-else size="small" :bordered="false" :type="statusTagType">
+        <n-tag v-else size="small" :bordered="false" :type="statusTagType(status)">
           <template v-if="checking" #icon>
             <n-spin :size="12" />
           </template>
-          {{ statusLabel }}
+          {{ statusLabel(status) }}
         </n-tag>
         <n-tag size="small" :bordered="false" type="default">
           Node {{ device.node_id }}

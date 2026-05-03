@@ -36,7 +36,7 @@ function activeKey() {
 </script>
 
 <template>
-  <n-config-provider :theme="themeStore.theme">
+  <n-config-provider :theme="themeStore.theme" :theme-overrides="themeStore.themeOverrides">
     <n-message-provider>
       <n-layout has-sider style="height: 100vh">
         <n-layout-sider
@@ -61,6 +61,8 @@ function activeKey() {
               <n-breadcrumb-item>Matter Controller</n-breadcrumb-item>
             </n-breadcrumb>
             <n-space align="center" size="small">
+              <n-text depth="3" style="font-size: 13px">Compact</n-text>
+              <n-switch :value="themeStore.isCompact" @update:value="themeStore.toggleCompact" size="small" />
               <n-text depth="3" style="font-size: 13px">{{ themeStore.isDark ? 'Dark' : 'Light' }}</n-text>
               <n-switch :value="themeStore.isDark" @update:value="themeStore.toggle" size="small" />
             </n-space>

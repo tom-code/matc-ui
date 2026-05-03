@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { h, ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { NButton, NTag, NTooltip, NSpin, NSpace } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
 import { useDevicesStore } from '../stores/devices'
 import DeviceCard from '../components/DeviceCard.vue'
+import { statusTagType, statusLabel } from '../utils/deviceStatus'
+import type { DeviceDto } from '../types'
+
+type ViewMode = 'cards' | 'table'
 
 const store = useDevicesStore()
+const router = useRouter()
+
+const viewMode = ref<ViewMode>(
+  (localStorage.getItem('devices.viewMode') as ViewMode) || 'cards'
+)
+watch(viewMode, v => localStorage.setItem('devices.viewMode', v))
 
 onMounted(async () => {
   await store.fetchDevices()
@@ -18,15 +31,72 @@ async function handleRefresh() {
 function handleProbe(nodeId: number) {
   store.fetchDeviceInfo(nodeId).catch(() => undefined)
 }
+
+const columns = computed<DataTableColumns<DeviceDto>>(() => [
+  {
+    title: 'Name',
+    key: 'name',
+    sorter: (a, b) => a.name.localeCompare(b.name),
+  },
+  {
+    title: 'Status',
+    key: 'status',
+    width: 130,
+    render(row) {
+      const s = store.deviceStatus[row.node_id]
+      const err = store.statusError[row.node_id]
+      const tag = h(NTag, { size: 'small', bordered: false, type: statusTagType(s) }, {
+        default: () => statusLabel(s),
+        ...(s === 'checking' ? { icon: () => h(NSpin, { size: 12 }) } : {}),
+      })
+      if (s === 'failed' && err) {
+        return h(NTooltip, { trigger: 'hover' }, {
+          trigger: () => tag,
+          default: () => err,
+        })
+      }
+      return tag
+    },
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    width: 170,
+    render(row) {
+      const checking = store.deviceStatus[row.node_id] === 'checking'
+      return h(NSpace, { size: 'small', wrap: false }, {
+        default: () => [
+          h(NButton, {
+            size: 'small',
+            type: 'primary',
+            onClick: () => router.push(`/devices/${row.node_id}`),
+          }, { default: () => 'View Details' }),
+          h(NButton, {
+            size: 'small',
+            loading: checking,
+            disabled: checking,
+            onClick: () => handleProbe(row.node_id),
+          }, { default: () => 'Check' }),
+        ],
+      })
+    },
+  },
+])
 </script>
 
 <template>
   <div class="view-container">
     <div class="view-header">
       <n-h2 style="margin: 0">Commissioned Devices</n-h2>
-      <n-button @click="handleRefresh" :loading="store.loading" size="small">
-        Refresh
-      </n-button>
+      <n-space align="center">
+        <n-radio-group v-model:value="viewMode" size="small">
+          <n-radio-button value="cards">Cards</n-radio-button>
+          <n-radio-button value="table">Table</n-radio-button>
+        </n-radio-group>
+        <n-button @click="handleRefresh" :loading="store.loading" size="small">
+          Refresh
+        </n-button>
+      </n-space>
     </div>
 
     <n-spin :show="store.loading">
@@ -40,7 +110,8 @@ function handleProbe(nodeId: number) {
           </template>
         </n-empty>
       </div>
-      <div class="device-grid">
+
+      <div v-if="viewMode === 'cards'" class="device-grid">
         <DeviceCard
           v-for="device in store.devices"
           :key="device.node_id"
@@ -53,6 +124,14 @@ function handleProbe(nodeId: number) {
           @probe="handleProbe(device.node_id)"
         />
       </div>
+
+      <n-data-table
+        v-else
+        :columns="columns"
+        :data="store.devices"
+        :row-key="(d: DeviceDto) => d.node_id"
+        size="small"
+      />
     </n-spin>
   </div>
 </template>

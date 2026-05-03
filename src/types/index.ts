@@ -37,7 +37,8 @@ export interface BleDeviceDto {
 export interface AttrNode {
   id: number
   name: string
-  value: string
+  value: string | null
+  error: string | null
 }
 
 export interface ClusterNode {
