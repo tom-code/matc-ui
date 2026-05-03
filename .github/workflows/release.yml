@@ -67,7 +67,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         working-directory: matc-ui
         env:
-          APPLE_SIGNING_IDENTITY: ""
+          APPLE_SIGNING_IDENTITY: "-"
         run: npm run tauri build
 
       - name: Build (Linux / Windows)
@@ -88,8 +88,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cp matc-ui/src-tauri/target/release/matc-ui .
-          zip "matc-ui-${VERSION}-linux-portable.zip" matc-ui
+          zip "matc-ui-${VERSION}-linux-portable.zip" matc-ui/src-tauri/target/release/matc-ui
 
       - name: Create portable zip (Windows)
         if: matrix.os == 'windows-latest'
