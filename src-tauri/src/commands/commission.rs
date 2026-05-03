@@ -63,7 +63,6 @@ pub async fn commission_by_address(
     })
 }
 
-#[cfg(feature = "ble")]
 #[tauri::command]
 pub async fn commission_ble(
     state: State<'_, Arc<AppState>>,
@@ -99,17 +98,4 @@ pub async fn commission_ble(
         name: dev.name,
         address: dev.address,
     })
-}
-
-#[cfg(not(feature = "ble"))]
-#[tauri::command]
-pub async fn commission_ble(
-    _state: State<'_, Arc<AppState>>,
-    _pairing_code: String,
-    _node_id: u64,
-    _name: String,
-    _wifi_ssid: String,
-    _wifi_password: String,
-) -> Result<DeviceDto, String> {
-    Err("BLE support not compiled in".to_string())
 }

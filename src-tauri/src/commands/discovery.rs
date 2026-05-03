@@ -51,7 +51,6 @@ pub async fn discover_mdns(timeout_secs: u64) -> Result<Vec<DiscoveredDeviceDto>
     Ok(result)
 }
 
-#[cfg(feature = "ble")]
 #[tauri::command]
 pub async fn scan_ble(timeout_secs: u64) -> Result<Vec<BleDeviceDto>, String> {
     let timeout = Duration::from_secs(timeout_secs.clamp(2, 30));
@@ -72,10 +71,4 @@ pub async fn scan_ble(timeout_secs: u64) -> Result<Vec<BleDeviceDto>, String> {
             address: d.address,
         })
         .collect())
-}
-
-#[cfg(not(feature = "ble"))]
-#[tauri::command]
-pub async fn scan_ble(_timeout_secs: u64) -> Result<Vec<BleDeviceDto>, String> {
-    Err("BLE support not compiled in".to_string())
 }
