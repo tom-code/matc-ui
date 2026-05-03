@@ -38,7 +38,11 @@ pub fn run() {
                         dm
                     }
                     Err(e) => {
-                        log::info!("Creating new DeviceManager at {} (reason: {})", data_path, e);
+                        log::info!(
+                            "Creating new DeviceManager at {} (reason: {})",
+                            data_path,
+                            e
+                        );
                         let config = ManagerConfig {
                             fabric_id: 1000,
                             controller_id: 100,

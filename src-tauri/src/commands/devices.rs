@@ -29,7 +29,11 @@ pub async fn list_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceD
     let devices = dm.list_devices().map_err(|e| e.to_string())?;
     Ok(devices
         .into_iter()
-        .map(|d| DeviceDto { node_id: d.node_id, name: d.name, address: d.address })
+        .map(|d| DeviceDto {
+            node_id: d.node_id,
+            name: d.name,
+            address: d.address,
+        })
         .collect())
 }
 
@@ -53,8 +57,14 @@ pub async fn get_device_info(
 
     let vendor_name = match tokio::time::timeout(
         Duration::from_secs(4),
-        conn.read_request2(0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME),
-    ).await {
+        conn.read_request2(
+            0,
+            CLUSTER_ID_BASIC_INFORMATION,
+            CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME,
+        ),
+    )
+    .await
+    {
         Ok(Ok(matc::tlv::TlvItemValue::String(s))) => s,
         Ok(Ok(v)) => format!("{:?}", v),
         Ok(Err(e)) => {
@@ -67,10 +77,29 @@ pub async fn get_device_info(
         }
     };
 
-    let product_name = read_string(&conn, 0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME).await;
-    let sw_version = read_string(&conn, 0, CLUSTER_ID_BASIC_INFORMATION, CLUSTER_BASIC_INFORMATION_ATTR_ID_SOFTWAREVERSIONSTRING).await;
+    let product_name = read_string(
+        &conn,
+        0,
+        CLUSTER_ID_BASIC_INFORMATION,
+        CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME,
+    )
+    .await;
+    let sw_version = read_string(
+        &conn,
+        0,
+        CLUSTER_ID_BASIC_INFORMATION,
+        CLUSTER_BASIC_INFORMATION_ATTR_ID_SOFTWAREVERSIONSTRING,
+    )
+    .await;
 
-    Ok(DeviceInfoDto { node_id, name, address, vendor_name, product_name, sw_version })
+    Ok(DeviceInfoDto {
+        node_id,
+        name,
+        address,
+        vendor_name,
+        product_name,
+        sw_version,
+    })
 }
 
 async fn read_string(
@@ -97,10 +126,7 @@ pub async fn rename_device(
 }
 
 #[tauri::command]
-pub async fn remove_device(
-    state: State<'_, Arc<AppState>>,
-    node_id: u64,
-) -> Result<(), String> {
+pub async fn remove_device(state: State<'_, Arc<AppState>>, node_id: u64) -> Result<(), String> {
     let state = state.inner().clone();
     AppState::drop_connection(&state, node_id).await;
     let dm = &state.devman;
@@ -115,7 +141,9 @@ async fn get_conn_with_retry(
         Ok(c) => Ok(c),
         Err(_) => {
             AppState::drop_connection(state, node_id).await;
-            AppState::get_connection(state, node_id).await.map_err(|e| e.to_string())
+            AppState::get_connection(state, node_id)
+                .await
+                .map_err(|e| e.to_string())
         }
     }
 }

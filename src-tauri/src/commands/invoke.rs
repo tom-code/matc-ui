@@ -95,7 +95,9 @@ async fn get_conn(
         Ok(c) => Ok(c),
         Err(_) => {
             AppState::drop_connection(state, node_id).await;
-            AppState::get_connection(state, node_id).await.map_err(|e| e.to_string())
+            AppState::get_connection(state, node_id)
+                .await
+                .map_err(|e| e.to_string())
         }
     }
 }

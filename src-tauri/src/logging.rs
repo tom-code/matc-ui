@@ -117,7 +117,11 @@ pub fn snapshot(limit: Option<usize>) -> Vec<LogEntry> {
 
 pub fn clear() {
     if let Some(logger) = LOGGER.get() {
-        logger.buffer.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        logger
+            .buffer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -138,11 +142,9 @@ pub fn set_level(level: &str) -> Result<(), String> {
 }
 
 pub fn current_level() -> &'static str {
-    let v = LOGGER
-        .get()
-        .map_or(filter_to_u8(LevelFilter::Debug), |l| {
-            l.level.load(Ordering::Relaxed)
-        });
+    let v = LOGGER.get().map_or(filter_to_u8(LevelFilter::Debug), |l| {
+        l.level.load(Ordering::Relaxed)
+    });
     match u8_to_filter(v) {
         LevelFilter::Off => "off",
         LevelFilter::Error => "error",

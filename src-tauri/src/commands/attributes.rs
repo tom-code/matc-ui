@@ -44,7 +44,11 @@ pub async fn read_attribute_tree(
     let conn = get_conn(&state, node_id).await?;
 
     let parts_tlv = conn
-        .read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
+        .read_request2(
+            0,
+            CLUSTER_ID_DESCRIPTOR,
+            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -68,7 +72,11 @@ pub async fn read_attribute_tree(
     let mut ep_nodes = Vec::new();
     for ep in endpoints {
         let cluster_tlv = conn
-            .read_request2(ep, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_SERVERLIST)
+            .read_request2(
+                ep,
+                CLUSTER_ID_DESCRIPTOR,
+                CLUSTER_DESCRIPTOR_ATTR_ID_SERVERLIST,
+            )
             .await;
         let cluster_ids: Vec<u32> = match cluster_tlv {
             Ok(TlvItemValue::List(items)) => items
@@ -94,10 +102,18 @@ pub async fn read_attribute_tree(
             let mut attr_nodes = Vec::new();
             for (attr_id, attr_name) in attr_list {
                 let (value, error) = match conn.read_request2(ep, cluster_id, attr_id).await {
-                    Ok(v) => (Some(codec::decode_attribute_json(cluster_id, attr_id, &v)), None),
+                    Ok(v) => (
+                        Some(codec::decode_attribute_json(cluster_id, attr_id, &v)),
+                        None,
+                    ),
                     Err(e) => (None, Some(e.to_string())),
                 };
-                attr_nodes.push(AttrNode { id: attr_id, name: attr_name.to_string(), value, error });
+                attr_nodes.push(AttrNode {
+                    id: attr_id,
+                    name: attr_name.to_string(),
+                    value,
+                    error,
+                });
             }
 
             cluster_nodes.push(ClusterNode {
@@ -107,10 +123,15 @@ pub async fn read_attribute_tree(
             });
         }
 
-        ep_nodes.push(EndpointNode { id: ep, clusters: cluster_nodes });
+        ep_nodes.push(EndpointNode {
+            id: ep,
+            clusters: cluster_nodes,
+        });
     }
 
-    Ok(EndpointTree { endpoints: ep_nodes })
+    Ok(EndpointTree {
+        endpoints: ep_nodes,
+    })
 }
 
 #[tauri::command]
@@ -138,7 +159,9 @@ async fn get_conn(
         Ok(c) => Ok(c),
         Err(_) => {
             AppState::drop_connection(state, node_id).await;
-            AppState::get_connection(state, node_id).await.map_err(|e| e.to_string())
+            AppState::get_connection(state, node_id)
+                .await
+                .map_err(|e| e.to_string())
         }
     }
 }
