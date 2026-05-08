@@ -4,6 +4,7 @@ import DeviceDetailView from '../views/DeviceDetailView.vue'
 import DiscoverView from '../views/DiscoverView.vue'
 import CommissionByCodeView from '../views/CommissionByCodeView.vue'
 import LogsView from '../views/LogsView.vue'
+import SettingsView from '../views/SettingsView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -14,5 +15,6 @@ export const router = createRouter({
     { path: '/discover', component: DiscoverView },
     { path: '/commission', component: CommissionByCodeView },
     { path: '/logs', component: LogsView },
+    { path: '/settings', component: SettingsView },
   ],
 })

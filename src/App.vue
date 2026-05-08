@@ -23,6 +23,7 @@ const menuOptions: MenuOption[] = [
   { label: 'Discover', key: '/discover' },
   { label: 'Commission by Code', key: '/commission' },
   { label: 'Logs', key: '/logs' },
+  { label: 'Settings', key: '/settings' },
 ]
 
 function handleMenuSelect(key: string) {
@@ -56,16 +57,10 @@ function activeKey() {
         </n-layout-sider>
 
         <n-layout content-style="padding: 0">
-          <n-layout-header bordered style="padding: 0 24px; height: 48px; display: flex; align-items: center; justify-content: space-between">
+          <n-layout-header bordered style="padding: 0 24px; height: 48px; display: flex; align-items: center">
             <n-breadcrumb>
               <n-breadcrumb-item>Matter Controller</n-breadcrumb-item>
             </n-breadcrumb>
-            <n-space align="center" size="small">
-              <n-text depth="3" style="font-size: 13px">Compact</n-text>
-              <n-switch :value="themeStore.isCompact" @update:value="themeStore.toggleCompact" size="small" />
-              <n-text depth="3" style="font-size: 13px">{{ themeStore.isDark ? 'Dark' : 'Light' }}</n-text>
-              <n-switch :value="themeStore.isDark" @update:value="themeStore.toggle" size="small" />
-            </n-space>
           </n-layout-header>
 
           <n-layout-content content-style="padding: 24px; overflow: auto; height: calc(100vh - 48px)">

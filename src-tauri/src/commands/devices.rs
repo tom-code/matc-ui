@@ -137,13 +137,14 @@ async fn get_conn_with_retry(
     state: &Arc<AppState>,
     node_id: u64,
 ) -> Result<Arc<matc::controller::Connection>, String> {
-    match AppState::get_connection_with_retry(state, node_id).await {
-        Ok(c) => Ok(c),
-        Err(_) => {
-            AppState::drop_connection(state, node_id).await;
-            AppState::get_connection(state, node_id)
-                .await
-                .map_err(|e| e.to_string())
+    let has_cache = state.connections.lock().await.contains_key(&node_id);
+    if has_cache {
+        match AppState::get_connection_with_retry(state, node_id).await {
+            Ok(c) => return Ok(c),
+            Err(_) => AppState::drop_connection(state, node_id).await,
         }
     }
+    AppState::get_connection(state, node_id)
+        .await
+        .map_err(|e| e.to_string())
 }
