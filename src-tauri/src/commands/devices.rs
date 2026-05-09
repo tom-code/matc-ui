@@ -20,7 +20,9 @@ pub struct DeviceInfoDto {
     pub address: String,
     pub vendor_name: String,
     pub product_name: String,
+    pub hw_version: String,
     pub sw_version: String,
+    pub has_aggregator: bool,
 }
 
 #[tauri::command]
@@ -41,7 +43,9 @@ pub async fn list_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceD
 pub async fn get_device_info(
     state: State<'_, Arc<AppState>>,
     node_id: u64,
+    force_refresh: Option<bool>,
 ) -> Result<DeviceInfoDto, String> {
+    let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
     let (name, address) = {
@@ -53,7 +57,19 @@ pub async fn get_device_info(
         (dev.name.clone(), dev.address.clone())
     };
 
+    // Establishing the connection serves as the liveness check even when returning
+    // cached attribute data. If the device is unreachable, this returns an error
+    // and the frontend marks the device as failed.
     let conn = get_conn_with_retry(&state, node_id).await?;
+
+    if !force_refresh {
+        if let Some(mut cached) = state.cache_get_info::<DeviceInfoDto>(node_id).await {
+            // name and address come from the registry and may change; always use fresh values.
+            cached.name = name;
+            cached.address = address;
+            return Ok(cached);
+        }
+    }
 
     let vendor_name = match tokio::time::timeout(
         Duration::from_secs(4),
@@ -84,6 +100,13 @@ pub async fn get_device_info(
         CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME,
     )
     .await;
+    let hw_version = read_string(
+        &conn,
+        0,
+        CLUSTER_ID_BASIC_INFORMATION,
+        CLUSTER_BASIC_INFORMATION_ATTR_ID_HARDWAREVERSIONSTRING,
+    )
+    .await;
     let sw_version = read_string(
         &conn,
         0,
@@ -92,14 +115,20 @@ pub async fn get_device_info(
     )
     .await;
 
-    Ok(DeviceInfoDto {
+    let has_aggregator = read_has_aggregator(&conn).await;
+
+    let result = DeviceInfoDto {
         node_id,
         name,
         address,
         vendor_name,
         product_name,
+        hw_version,
         sw_version,
-    })
+        has_aggregator,
+    };
+    state.cache_set_info(node_id, &result).await;
+    Ok(result)
 }
 
 async fn read_string(
@@ -113,6 +142,46 @@ async fn read_string(
         Ok(v) => format!("{:?}", v),
         Err(_) => String::new(),
     }
+}
+
+const DEVICE_TYPE_AGGREGATOR: u64 = 0x000E;
+
+async fn read_has_aggregator(conn: &Arc<matc::controller::Connection>) -> bool {
+    // EP 0's PartsList contains all other endpoint IDs on the device.
+    let mut endpoints = vec![0u16];
+    if let Ok(matc::tlv::TlvItemValue::List(items)) = conn
+        .read_request2(
+            0,
+            CLUSTER_ID_DESCRIPTOR,
+            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
+        )
+        .await
+    {
+        for item in &items {
+            if let matc::tlv::TlvItemValue::Int(i) = &item.value {
+                endpoints.push(*i as u16);
+            }
+        }
+    }
+
+    for ep in endpoints {
+        if let Ok(matc::tlv::TlvItemValue::List(items)) = conn
+            .read_request2(
+                ep,
+                CLUSTER_ID_DESCRIPTOR,
+                CLUSTER_DESCRIPTOR_ATTR_ID_DEVICETYPELIST,
+            )
+            .await
+        {
+            if items
+                .iter()
+                .any(|item| item.get_int(&[0]) == Some(DEVICE_TYPE_AGGREGATOR))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[tauri::command]
@@ -129,6 +198,7 @@ pub async fn rename_device(
 pub async fn remove_device(state: State<'_, Arc<AppState>>, node_id: u64) -> Result<(), String> {
     let state = state.inner().clone();
     AppState::drop_connection(&state, node_id).await;
+    AppState::drop_cache(&state, node_id).await;
     let dm = &state.devman;
     dm.remove_device(node_id).map_err(|e| e.to_string())
 }

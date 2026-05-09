@@ -19,3 +19,13 @@ pub fn set_log_level(level: String) -> Result<(), String> {
 pub fn get_log_level() -> String {
     logging::current_level().to_string()
 }
+
+#[tauri::command]
+pub fn set_stdout_logging(enabled: bool) {
+    logging::set_stdout(enabled);
+}
+
+#[tauri::command]
+pub fn get_stdout_logging() -> bool {
+    logging::stdout_enabled()
+}

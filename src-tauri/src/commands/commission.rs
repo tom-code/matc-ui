@@ -4,6 +4,16 @@ use tauri::State;
 
 use crate::{commands::devices::DeviceDto, state::AppState};
 
+#[derive(serde::Serialize)]
+pub struct OpenCommissioningWindowResultDto {
+    pub status: u32,
+    pub manual_pairing_code: String,
+    pub pin: u32,
+    pub discriminator: u16,
+    pub iterations: u32,
+    pub timeout_secs: u16,
+}
+
 #[tauri::command]
 pub async fn commission_by_code(
     state: State<'_, Arc<AppState>>,
@@ -19,6 +29,7 @@ pub async fn commission_by_code(
             .map_err(|e| e.to_string())?
     };
     let conn = Arc::new(conn);
+    AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
 
     let dev = state
@@ -49,6 +60,7 @@ pub async fn commission_by_address(
             .map_err(|e| e.to_string())?
     };
     let conn = Arc::new(conn);
+    AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
 
     let dev = state
@@ -86,6 +98,7 @@ pub async fn commission_ble(
             .map_err(|e| e.to_string())?
     };
     let conn = Arc::new(conn);
+    AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
 
     let dev = state
@@ -97,5 +110,80 @@ pub async fn commission_ble(
         node_id: dev.node_id,
         name: dev.name,
         address: dev.address,
+    })
+}
+
+#[tauri::command]
+pub async fn open_commissioning_window(
+    state: State<'_, Arc<AppState>>,
+    node_id: u64,
+    pin: u32,
+    discriminator: u16,
+    iterations: u32,
+    timeout_secs: u16,
+) -> Result<OpenCommissioningWindowResultDto, String> {
+    use matc::clusters::codec::admin_commissioning_cluster::encode_open_commissioning_window;
+    use matc::clusters::defs::{
+        CLUSTER_ADMINISTRATOR_COMMISSIONING_CMD_ID_OPENCOMMISSIONINGWINDOW,
+        CLUSTER_ID_ADMINISTRATOR_COMMISSIONING,
+    };
+
+    let state = state.inner().clone();
+
+    let conn = match AppState::get_connection_with_retry(&state, node_id).await {
+        Ok(c) => c,
+        Err(_) => {
+            AppState::drop_connection(&state, node_id).await;
+            AppState::get_connection(&state, node_id)
+                .await
+                .map_err(|e| e.to_string())?
+        }
+    };
+
+    let mut salt = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
+
+    let key = matc::controller::pin_to_passcode(pin).map_err(|e| e.to_string())?;
+    let verifier = matc::spake2p::Engine::create_passcode_verifier(&key, &salt, iterations);
+
+    let payload = encode_open_commissioning_window(
+        timeout_secs,
+        verifier,
+        discriminator,
+        iterations,
+        salt.to_vec(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let resp = conn
+        .invoke_request_timed(
+            0,
+            CLUSTER_ID_ADMINISTRATOR_COMMISSIONING,
+            CLUSTER_ADMINISTRATOR_COMMISSIONING_CMD_ID_OPENCOMMISSIONINGWINDOW,
+            &payload,
+            6000,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let (_, status) = matc::messages::parse_im_invoke_resp(&resp.tlv).map_err(|e| e.to_string())?;
+
+    let manual_pairing_code =
+        matc::onboarding::encode_manual_pairing_code(&matc::onboarding::OnboardingInfo {
+            discriminator,
+            passcode: pin,
+            is_short_discriminator: false,
+            vendor_id: None,
+            product_id: None,
+            discovery_capabilities: None,
+        });
+
+    Ok(OpenCommissioningWindowResultDto {
+        status,
+        manual_pairing_code,
+        pin,
+        discriminator,
+        iterations,
+        timeout_secs,
     })
 }

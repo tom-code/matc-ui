@@ -1,9 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::{timeout, Duration};
 
 use matc::{controller::Connection, devman::DeviceManager};
+
+#[derive(Default)]
+struct DeviceCache {
+    info: Option<serde_json::Value>,
+    structure: Option<serde_json::Value>,
+    attributes: Option<serde_json::Value>,
+    device_tree: Option<serde_json::Value>,
+}
 
 pub struct AppState {
     pub devman: Arc<DeviceManager>,
@@ -14,6 +22,7 @@ pub struct AppState {
     // the first's retransmit loop to busy-spin on immediate Err("eof") for up to
     // MAX_RETRANSMIT_TIME (10s) at 100% CPU.
     connect_locks: std::sync::Mutex<HashMap<u64, Arc<Mutex<()>>>>,
+    device_cache: RwLock<HashMap<u64, DeviceCache>>,
 }
 
 impl AppState {
@@ -22,6 +31,7 @@ impl AppState {
             devman: Arc::new(devman),
             connections: Mutex::new(HashMap::new()),
             connect_locks: std::sync::Mutex::new(HashMap::new()),
+            device_cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -81,5 +91,90 @@ impl AppState {
 
     pub async fn drop_connection(state: &Arc<AppState>, node_id: u64) {
         state.connections.lock().await.remove(&node_id);
+    }
+
+    /// Clear all cached data for a node (call on remove_device or after a connection error).
+    pub async fn drop_cache(state: &Arc<AppState>, node_id: u64) {
+        state.device_cache.write().await.remove(&node_id);
+    }
+
+    pub async fn cache_get_info<T: for<'de> serde::Deserialize<'de>>(
+        &self,
+        node_id: u64,
+    ) -> Option<T> {
+        let guard = self.device_cache.read().await;
+        let entry = guard.get(&node_id)?;
+        serde_json::from_value(entry.info.clone()?).ok()
+    }
+
+    pub async fn cache_set_info<T: serde::Serialize>(&self, node_id: u64, val: &T) {
+        if let Ok(v) = serde_json::to_value(val) {
+            self.device_cache
+                .write()
+                .await
+                .entry(node_id)
+                .or_default()
+                .info = Some(v);
+        }
+    }
+
+    pub async fn cache_get_structure<T: for<'de> serde::Deserialize<'de>>(
+        &self,
+        node_id: u64,
+    ) -> Option<T> {
+        let guard = self.device_cache.read().await;
+        let entry = guard.get(&node_id)?;
+        serde_json::from_value(entry.structure.clone()?).ok()
+    }
+
+    pub async fn cache_set_structure<T: serde::Serialize>(&self, node_id: u64, val: &T) {
+        if let Ok(v) = serde_json::to_value(val) {
+            self.device_cache
+                .write()
+                .await
+                .entry(node_id)
+                .or_default()
+                .structure = Some(v);
+        }
+    }
+
+    pub async fn cache_get_attributes<T: for<'de> serde::Deserialize<'de>>(
+        &self,
+        node_id: u64,
+    ) -> Option<T> {
+        let guard = self.device_cache.read().await;
+        let entry = guard.get(&node_id)?;
+        serde_json::from_value(entry.attributes.clone()?).ok()
+    }
+
+    pub async fn cache_set_attributes<T: serde::Serialize>(&self, node_id: u64, val: &T) {
+        if let Ok(v) = serde_json::to_value(val) {
+            self.device_cache
+                .write()
+                .await
+                .entry(node_id)
+                .or_default()
+                .attributes = Some(v);
+        }
+    }
+
+    pub async fn cache_get_device_tree<T: for<'de> serde::Deserialize<'de>>(
+        &self,
+        node_id: u64,
+    ) -> Option<T> {
+        let guard = self.device_cache.read().await;
+        let entry = guard.get(&node_id)?;
+        serde_json::from_value(entry.device_tree.clone()?).ok()
+    }
+
+    pub async fn cache_set_device_tree<T: serde::Serialize>(&self, node_id: u64, val: &T) {
+        if let Ok(v) = serde_json::to_value(val) {
+            self.device_cache
+                .write()
+                .await
+                .entry(node_id)
+                .or_default()
+                .device_tree = Some(v);
+        }
     }
 }

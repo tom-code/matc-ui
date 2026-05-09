@@ -8,13 +8,23 @@ mod logging;
 mod state;
 
 use commands::{
-    attributes::{read_attribute_tree, read_single_attribute},
-    clusters::{get_command_schema, list_cluster_commands},
-    commission::{commission_ble, commission_by_address, commission_by_code},
+    attributes::{
+        read_attribute_tree, read_device_tree, read_endpoint_structure, read_single_attribute,
+    },
+    clusters::{
+        get_command_schema, get_device_type_name, list_cluster_attributes, list_cluster_commands,
+    },
+    commission::{
+        commission_ble, commission_by_address, commission_by_code, open_commissioning_window,
+    },
     devices::{get_device_info, list_devices, remove_device, rename_device},
     discovery::{discover_mdns, scan_ble},
     invoke::{invoke_command, invoke_command_typed},
-    logs::{clear_logs, get_log_level, get_recent_logs, set_log_level},
+    logs::{
+        clear_logs, get_log_level, get_recent_logs, get_stdout_logging, set_log_level,
+        set_stdout_logging,
+    },
+    write::write_attribute,
 };
 use state::AppState;
 
@@ -68,7 +78,10 @@ pub fn run() {
             commission_by_code,
             commission_by_address,
             commission_ble,
+            open_commissioning_window,
             read_attribute_tree,
+            read_device_tree,
+            read_endpoint_structure,
             read_single_attribute,
             invoke_command,
             invoke_command_typed,
@@ -78,8 +91,13 @@ pub fn run() {
             clear_logs,
             set_log_level,
             get_log_level,
+            set_stdout_logging,
+            get_stdout_logging,
             list_cluster_commands,
+            list_cluster_attributes,
             get_command_schema,
+            get_device_type_name,
+            write_attribute,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

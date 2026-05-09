@@ -1,9 +1,26 @@
 use std::sync::Arc;
 
+use matc::tlv::TlvItem;
 use tauri::State;
 
 use crate::state::AppState;
 use matc::clusters::codec;
+
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InvokeResultDto {
+    Status { code: u16 },
+    Data { tlv: String },
+}
+
+fn format_invoke_result(tlv: &TlvItem) -> InvokeResultDto {
+    if let Some(code) = tlv.get_int(&[1, 0, 1, 1, 0]) {
+        return InvokeResultDto::Status { code: code as u16 };
+    }
+    InvokeResultDto::Data {
+        tlv: format!("{:#?}", tlv),
+    }
+}
 
 #[tauri::command]
 pub async fn invoke_command(
@@ -13,7 +30,7 @@ pub async fn invoke_command(
     cluster: u32,
     command: u32,
     payload_hex: String,
-) -> Result<String, String> {
+) -> Result<InvokeResultDto, String> {
     let payload = if payload_hex.is_empty() {
         vec![]
     } else {
@@ -28,14 +45,12 @@ pub async fn invoke_command(
         .await;
 
     match result {
-        Ok(msg) => {
-            let json = serde_json::to_string_pretty(&format!("{:?}", msg.tlv))
-                .unwrap_or_else(|_| "OK".to_string());
-            Ok(json)
-        }
+        Ok(msg) => Ok(format_invoke_result(&msg.tlv)),
         Err(e) => {
+            // Drop our Arc first so the old read loop is cancelled before we open
+            // a new socket to the same address (see state.rs:11-15).
+            drop(conn);
             AppState::drop_connection(&state, node_id).await;
-            // retry with fresh connection
             let conn = AppState::get_connection(&state, node_id)
                 .await
                 .map_err(|e2| format!("reconnect failed: {} (original: {})", e2, e))?;
@@ -43,7 +58,7 @@ pub async fn invoke_command(
                 .invoke_request(endpoint, cluster, command, &payload)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!("{:?}", msg.tlv))
+            Ok(format_invoke_result(&msg.tlv))
         }
     }
 }
@@ -56,7 +71,7 @@ pub async fn invoke_command_typed(
     cluster: u32,
     command: u32,
     args: serde_json::Value,
-) -> Result<String, String> {
+) -> Result<InvokeResultDto, String> {
     let payload = codec::encode_command_json(cluster, command, &args)
         .map_err(|e| format!("encode: {}", e))?;
 
@@ -68,12 +83,9 @@ pub async fn invoke_command_typed(
         .await;
 
     match result {
-        Ok(msg) => {
-            let json = serde_json::to_string_pretty(&format!("{:?}", msg.tlv))
-                .unwrap_or_else(|_| "OK".to_string());
-            Ok(json)
-        }
+        Ok(msg) => Ok(format_invoke_result(&msg.tlv)),
         Err(e) => {
+            drop(conn);
             AppState::drop_connection(&state, node_id).await;
             let conn = AppState::get_connection(&state, node_id)
                 .await
@@ -82,7 +94,7 @@ pub async fn invoke_command_typed(
                 .invoke_request(endpoint, cluster, command, &payload)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!("{:?}", msg.tlv))
+            Ok(format_invoke_result(&msg.tlv))
         }
     }
 }

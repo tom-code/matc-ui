@@ -2520,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "matc"
 version = "0.1.2"
-source = "git+https://github.com/tom-code/rust-matc.git?branch=main#d18bf1e12458d6229579ab710d45048f5ff7a9f1"
+source = "git+https://github.com/tom-code/rust-matc.git?branch=main#9784654f1b1ab0829706d92c148b55deeda6270c"
 dependencies = [
  "aes",
  "anyhow",
@@ -2561,6 +2561,7 @@ dependencies = [
  "hex",
  "log",
  "matc",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "tauri",

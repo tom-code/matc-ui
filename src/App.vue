@@ -20,8 +20,7 @@ const themeStore = useThemeStore()
 
 const menuOptions: MenuOption[] = [
   { label: 'Devices', key: '/devices' },
-  { label: 'Discover', key: '/discover' },
-  { label: 'Commission by Code', key: '/commission' },
+  { label: 'Commission', key: '/commission' },
   { label: 'Logs', key: '/logs' },
   { label: 'Settings', key: '/settings' },
 ]

@@ -19,10 +19,10 @@ export const useDevicesStore = defineStore('devices', () => {
     }
   }
 
-  async function fetchDeviceInfo(nodeId: number): Promise<DeviceInfoDto> {
+  async function fetchDeviceInfo(nodeId: number, forceRefresh = false): Promise<DeviceInfoDto> {
     deviceStatus.value[nodeId] = 'checking'
     try {
-      const info = await invoke<DeviceInfoDto>('get_device_info', { nodeId })
+      const info = await invoke<DeviceInfoDto>('get_device_info', { nodeId, forceRefresh })
       deviceInfo.value[nodeId] = info
       deviceStatus.value[nodeId] = 'connected'
       delete statusError.value[nodeId]
@@ -49,7 +49,9 @@ export const useDevicesStore = defineStore('devices', () => {
 
   async function probeAllDevices(): Promise<void> {
     await Promise.all(
-      devices.value.map(d => fetchDeviceInfo(d.node_id).catch(() => undefined))
+      devices.value
+        .filter(d => deviceStatus.value[d.node_id] !== 'checking')
+        .map(d => fetchDeviceInfo(d.node_id).catch(() => undefined))
     )
   }
 

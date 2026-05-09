@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { h, ref, computed, watch, nextTick, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { NTag } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { useLogsStore, type StoredEntry } from '../stores/logs'
 
 const store = useLogsStore()
+
+const stdoutLogging = ref(false)
+
+async function toggleStdout(val: boolean) {
+  stdoutLogging.value = val
+  await invoke('set_stdout_logging', { enabled: val })
+}
 
 const tableRef = ref()
 const textFilter = ref('')
@@ -85,7 +93,10 @@ watch(entryCount, () => {
   }
 })
 
-onMounted(() => store.init())
+onMounted(async () => {
+  store.init()
+  stdoutLogging.value = await invoke<boolean>('get_stdout_logging')
+})
 </script>
 
 <template>
@@ -108,6 +119,8 @@ onMounted(() => store.init())
         />
         <n-switch v-model:value="autoScroll" size="small" />
         <n-text depth="3" style="font-size: 13px">Auto-scroll</n-text>
+        <n-switch :value="stdoutLogging" size="small" @update:value="toggleStdout" />
+        <n-text depth="3" style="font-size: 13px">Stdout</n-text>
         <n-button
           size="small"
           :type="store.paused ? 'primary' : 'default'"

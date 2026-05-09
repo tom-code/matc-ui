@@ -1,9 +1,16 @@
-use matc::clusters::codec;
+use matc::clusters::{codec, dt_names};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandDto {
+    pub id: u32,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributeDto {
     pub id: u32,
     pub name: String,
 }
@@ -24,6 +31,22 @@ pub struct CommandFieldDto {
 #[serde(rename_all = "camelCase")]
 pub struct CommandSchemaDto {
     pub fields: Vec<CommandFieldDto>,
+}
+
+#[tauri::command]
+pub fn get_device_type_name(device_type: u32) -> Option<String> {
+    dt_names::get_device_type_name(device_type).map(|s| s.to_string())
+}
+
+#[tauri::command]
+pub fn list_cluster_attributes(cluster_id: u32) -> Vec<AttributeDto> {
+    codec::get_attribute_list(cluster_id)
+        .into_iter()
+        .map(|(id, name)| AttributeDto {
+            id,
+            name: name.to_string(),
+        })
+        .collect()
 }
 
 #[tauri::command]

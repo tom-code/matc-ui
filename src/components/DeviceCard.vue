@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DeviceDto, DeviceInfoDto, DeviceConnectionStatus } from '../types'
 import { statusTagType, statusLabel } from '../utils/deviceStatus'
@@ -12,26 +12,10 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'rename', name: string): void
-  (e: 'remove'): void
   (e: 'probe'): void
 }>()
 
 const router = useRouter()
-const renameMode = ref(false)
-const newName = ref('')
-
-function startRename() {
-  newName.value = props.device.name
-  renameMode.value = true
-}
-
-function confirmRename() {
-  if (newName.value.trim()) {
-    emit('rename', newName.value.trim())
-  }
-  renameMode.value = false
-}
 
 const checking = computed(() => props.status === 'checking')
 </script>
@@ -40,20 +24,14 @@ const checking = computed(() => props.status === 'checking')
   <n-card :title="device.name" hoverable>
     <template #header-extra>
       <n-space size="small" align="center">
-        <n-tooltip v-if="status === 'failed' && statusError" trigger="hover">
-          <template #trigger>
-            <n-tag size="small" :bordered="false" :type="statusTagType(status)">
-              {{ statusLabel(status) }}
-            </n-tag>
-          </template>
-          {{ statusError }}
-        </n-tooltip>
-        <n-tag v-else size="small" :bordered="false" :type="statusTagType(status)">
-          <template v-if="checking" #icon>
-            <n-spin :size="12" />
-          </template>
-          {{ statusLabel(status) }}
-        </n-tag>
+        <span :title="status === 'failed' && statusError ? statusError : undefined">
+          <n-tag size="small" :bordered="false" :type="statusTagType(status)">
+            <template v-if="checking" #icon>
+              <n-spin :size="12" />
+            </template>
+            {{ statusLabel(status) }}
+          </n-tag>
+        </span>
         <n-tag size="small" :bordered="false" type="default">
           Node {{ device.node_id }}
         </n-tag>
@@ -88,26 +66,10 @@ const checking = computed(() => props.status === 'checking')
         <n-button size="small" :loading="checking" :disabled="checking" @click="emit('probe')">
           Check
         </n-button>
-        <n-button size="small" @click="startRename">Rename</n-button>
-        <n-popconfirm @positive-click="emit('remove')">
-          <template #trigger>
-            <n-button size="small" type="error" ghost>Remove</n-button>
-          </template>
-          Remove '{{ device.name }}' from registry?
-        </n-popconfirm>
       </n-space>
     </template>
   </n-card>
 
-  <n-modal v-model:show="renameMode" preset="dialog" title="Rename Device">
-    <n-input v-model:value="newName" @keyup.enter="confirmRename" />
-    <template #action>
-      <n-space>
-        <n-button @click="renameMode = false">Cancel</n-button>
-        <n-button type="primary" @click="confirmRename">Save</n-button>
-      </n-space>
-    </template>
-  </n-modal>
 </template>
 
 <style scoped>

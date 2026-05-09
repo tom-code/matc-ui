@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import type { EndpointTree, CommandDto, CommandSchemaDto, CommandFieldDto, FieldKind } from '../types'
+import type { EndpointTree, CommandDto, CommandSchemaDto, CommandFieldDto, FieldKind, InvokeResult } from '../types'
+import { formatStatus, isSuccess } from '../utils/matterStatus'
 
 const props = defineProps<{
   nodeId: number
@@ -10,7 +11,7 @@ const props = defineProps<{
 
 // --- shared ---
 const loading = ref(false)
-const result = ref<string | null>(null)
+const result = ref<InvokeResult | null>(null)
 const error = ref<string | null>(null)
 const activeTab = ref<'friendly' | 'raw'>('friendly')
 
@@ -23,6 +24,7 @@ const schema = ref<CommandSchemaDto | null>(null)
 const fieldValues = ref<Record<string, unknown>>({})
 const fieldEnabled = ref<Record<string, boolean>>({})
 const schemaLoading = ref(false)
+const pendingCommandId = ref<number | null>(null)
 
 // --- raw mode ---
 const rawEndpoint = ref(1)
@@ -104,12 +106,18 @@ watch(selectedClusterId, async (cid) => {
   fieldEnabled.value = {}
   if (cid === null) {
     commandList.value = []
+    pendingCommandId.value = null
     return
   }
   try {
     commandList.value = await invoke<CommandDto[]>('list_cluster_commands', { clusterId: cid })
+    if (pendingCommandId.value !== null) {
+      selectedCommandId.value = pendingCommandId.value
+      pendingCommandId.value = null
+    }
   } catch {
     commandList.value = []
+    pendingCommandId.value = null
   }
 })
 
@@ -177,7 +185,7 @@ async function sendFriendly() {
   try {
     const ep = selectedEndpoint.value ?? 1
     const args = buildArgs()
-    const res = await invoke<string>('invoke_command_typed', {
+    const res = await invoke<InvokeResult>('invoke_command_typed', {
       nodeId: props.nodeId,
       endpoint: ep,
       cluster: selectedClusterId.value,
@@ -206,7 +214,7 @@ async function sendRaw() {
   try {
     const clusterId = parseHexOrDec(rawCluster.value)
     const commandId = parseHexOrDec(rawCommand.value)
-    const res = await invoke<string>('invoke_command', {
+    const res = await invoke<InvokeResult>('invoke_command', {
       nodeId: props.nodeId,
       endpoint: rawEndpoint.value,
       cluster: clusterId,
@@ -231,8 +239,12 @@ const presets = [
 function applyPreset(p: typeof presets[0]) {
   activeTab.value = 'friendly'
   selectedEndpoint.value = p.endpoint
-  selectedClusterId.value = p.clusterId
-  selectedCommandId.value = p.commandId
+  if (selectedClusterId.value === p.clusterId) {
+    selectedCommandId.value = p.commandId
+  } else {
+    pendingCommandId.value = p.commandId
+    selectedClusterId.value = p.clusterId
+  }
 }
 
 // Helper: bitmap checkbox model
@@ -452,7 +464,12 @@ function bitmapToggleBit(fname: string, bit: number, checked: boolean) {
       <n-alert v-if="error" type="error" :title="error" />
       <div v-if="result" class="result-box">
         <n-text strong style="font-size: 12px">Response:</n-text>
-        <pre class="result-pre">{{ result }}</pre>
+        <div v-if="result.kind === 'status'" style="margin-top: 4px">
+          <n-tag :type="isSuccess(result.code) ? 'success' : 'error'" size="medium">
+            {{ formatStatus(result.code) }}
+          </n-tag>
+        </div>
+        <pre v-else class="result-pre">{{ result.tlv }}</pre>
       </div>
     </n-space>
   </div>

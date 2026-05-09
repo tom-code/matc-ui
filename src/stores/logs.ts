@@ -31,9 +31,11 @@ export const useLogsStore = defineStore('logs', () => {
     await loadRecent()
     if (!_subscribed) {
       _subscribed = true
-      await listen<LogEntry>('log://entry', event => {
+      await listen<LogEntry[]>('log://batch', event => {
         if (!paused.value) {
-          push(event.payload)
+          for (const entry of event.payload) {
+            push(entry)
+          }
         }
       })
     }

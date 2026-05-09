@@ -23,6 +23,7 @@ anyhow = "1"
 matc = { git = "https://github.com/tom-code/rust-matc.git", branch = "main", features = ["ble"] }
 hex = "0.4"
 log = "0.4"
+rand = "0.8"
 
 [profile.dev]
 opt-level = 1

@@ -1,8 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DevicesView from '../views/DevicesView.vue'
 import DeviceDetailView from '../views/DeviceDetailView.vue'
-import DiscoverView from '../views/DiscoverView.vue'
-import CommissionByCodeView from '../views/CommissionByCodeView.vue'
+import CommissionView from '../views/CommissionView.vue'
 import LogsView from '../views/LogsView.vue'
 import SettingsView from '../views/SettingsView.vue'
 
@@ -12,8 +11,7 @@ export const router = createRouter({
     { path: '/', redirect: '/devices' },
     { path: '/devices', component: DevicesView },
     { path: '/devices/:nodeId', component: DeviceDetailView, props: true },
-    { path: '/discover', component: DiscoverView },
-    { path: '/commission', component: CommissionByCodeView },
+    { path: '/commission', component: CommissionView },
     { path: '/logs', component: LogsView },
     { path: '/settings', component: SettingsView },
   ],

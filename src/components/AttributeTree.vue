@@ -3,6 +3,7 @@ import { h, computed } from 'vue'
 import { NDataTable } from 'naive-ui'
 import type { TreeOption, DataTableColumns } from 'naive-ui'
 import type { EndpointTree, AttrNode } from '../types'
+import { formatStatus } from '../utils/matterStatus'
 
 const props = defineProps<{ tree: EndpointTree }>()
 
@@ -10,38 +11,10 @@ function hex(n: number, pad = 4) {
   return `0x${n.toString(16).toUpperCase().padStart(pad, '0')}`
 }
 
-const MATTER_STATUS: Record<number, string> = {
-  0x00: 'SUCCESS',
-  0x01: 'FAILURE',
-  0x7d: 'INVALID_SUBSCRIPTION',
-  0x7e: 'UNSUPPORTED_ACCESS',
-  0x7f: 'UNSUPPORTED_ENDPOINT',
-  0x80: 'INVALID_ACTION',
-  0x81: 'UNSUPPORTED_COMMAND',
-  0x85: 'INVALID_COMMAND',
-  0x86: 'UNSUPPORTED_ATTRIBUTE',
-  0x87: 'CONSTRAINT_ERROR',
-  0x88: 'UNSUPPORTED_WRITE',
-  0x89: 'RESOURCE_EXHAUSTED',
-  0x8c: 'UNREPORTABLE_ATTRIBUTE',
-  0x8d: 'INVALID_DATA_TYPE',
-  0x8f: 'UNSUPPORTED_READ',
-  0x92: 'DATA_VERSION_MISMATCH',
-  0x94: 'TIMEOUT',
-  0x9c: 'BUSY',
-  0x9d: 'ACCESS_RESTRICTED',
-  0xc3: 'UNSUPPORTED_CLUSTER',
-  0xc5: 'NO_UPSTREAM_SUBSCRIPTION',
-}
-
 function formatError(raw: string): string {
   const m = raw.match(/^report data with status (\d+)$/)
   if (m) {
-    const code = parseInt(m[1], 10)
-    const name = MATTER_STATUS[code]
-    if (name) return `${name} (${hex(code, 2)})`
-    if (code >= 0x80 && code <= 0xbf) return `CLUSTER_SPECIFIC (${hex(code, 2)})`
-    return `STATUS_${hex(code, 2)}`
+    return formatStatus(parseInt(m[1], 10))
   }
   return raw
 }
@@ -123,6 +96,6 @@ function renderLabel({ option }: { option: TreeOption }) {
     :render-label="renderLabel"
     block-line
     :selectable="false"
-    style="max-height: 65vh; overflow: auto"
+    style="height: calc(100vh - 220px); min-height: 200px; overflow: auto"
   />
 </template>

@@ -10,17 +10,57 @@ const router = useRouter()
 const discoveryStore = useDiscoveryStore()
 const devicesStore = useDevicesStore()
 
-const tab = ref<'mdns' | 'ble'>('mdns')
+// Pairing code tab state
+type CodeTransport = 'network' | 'ble'
+const codeForm = ref({
+  pairing_code: '',
+  name: '',
+  node_id: 300,
+  transport: 'network' as CodeTransport,
+  wifi_ssid: '',
+  wifi_password: '',
+})
+const codeLoading = ref(false)
+const codeError = ref<string | null>(null)
+
+const codeSubmitDisabled = computed(() => {
+  if (!codeForm.value.pairing_code || !codeForm.value.name) return true
+  if (codeForm.value.transport === 'ble' && !codeForm.value.wifi_ssid) return true
+  return false
+})
+
+async function submitByCode() {
+  codeLoading.value = true
+  codeError.value = null
+  try {
+    const pairingCode = codeForm.value.pairing_code.trim()
+    const name = codeForm.value.name.trim()
+    const nodeId = codeForm.value.node_id
+
+    if (codeForm.value.transport === 'ble') {
+      await invoke('commission_ble', {
+        pairingCode,
+        nodeId,
+        name,
+        wifiSsid: codeForm.value.wifi_ssid,
+        wifiPassword: codeForm.value.wifi_password,
+      })
+    } else {
+      await invoke('commission_by_code', { pairingCode, nodeId, name })
+    }
+    await devicesStore.fetchDevices()
+    router.push('/devices')
+  } catch (e: any) {
+    codeError.value = e?.toString() ?? 'Unknown error'
+  } finally {
+    codeLoading.value = false
+  }
+}
+
+// mDNS / BLE scan state
 const pairingCodeFilter = ref('')
 const mdnsTimeout = ref(5)
 const bleTimeout = ref(10)
-
-// Commission dialog state
-const showCommissionDialog = ref(false)
-const commissionTarget = ref<{ address?: string; addresses?: string[]; pairingCode?: string; isBle?: boolean } | null>(null)
-const commissionForm = ref({ name: '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' })
-const commissioning = ref(false)
-const commissionError = ref<string | null>(null)
 
 const filteredMdns = computed(() => {
   const filter = pairingCodeFilter.value.trim()
@@ -31,13 +71,16 @@ const filteredMdns = computed(() => {
   )
 })
 
+// Commission dialog state (shared by mDNS and BLE)
+const showCommissionDialog = ref(false)
+const commissionTarget = ref<{ address?: string; addresses?: string[]; isBle?: boolean } | null>(null)
+const commissionForm = ref({ name: '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' })
+const commissioning = ref(false)
+const commissionError = ref<string | null>(null)
+
 function openCommission(device: DiscoveredDeviceDto) {
   const allAddresses = device.addresses.map(a => `${a}:${device.port}`)
-  commissionTarget.value = {
-    addresses: allAddresses,
-    address: allAddresses[0],
-    isBle: false,
-  }
+  commissionTarget.value = { addresses: allAddresses, address: allAddresses[0], isBle: false }
   commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' }
   commissionError.value = null
   showCommissionDialog.value = true
@@ -67,8 +110,6 @@ async function doCommission() {
       })
     } else if (target.address && pin > 0) {
       await invoke('commission_by_address', { address: target.address, pin, nodeId, name })
-    } else if (target.pairingCode) {
-      await invoke('commission_by_code', { pairingCode: target.pairingCode, nodeId, name })
     }
 
     showCommissionDialog.value = false
@@ -84,10 +125,86 @@ async function doCommission() {
 
 <template>
   <div class="view-container">
-    <n-h2>Discover Devices</n-h2>
+    <n-h2>Commission</n-h2>
 
-    <n-tabs v-model:value="tab" type="line">
-      <!-- mDNS Tab -->
+    <n-tabs default-value="code" type="line">
+      <!-- Pairing Code Tab -->
+      <n-tab-pane name="code" tab="Pairing Code">
+        <n-card style="max-width: 520px; margin-top: 12px">
+          <n-form label-placement="top" @submit.prevent="submitByCode">
+            <n-form-item label="Pairing Code" required>
+              <n-input
+                v-model:value="codeForm.pairing_code"
+                placeholder="e.g. 0251-520-0076"
+                :disabled="codeLoading"
+              />
+            </n-form-item>
+            <n-form-item label="Device Name" required>
+              <n-input
+                v-model:value="codeForm.name"
+                placeholder="e.g. kitchen light"
+                :disabled="codeLoading"
+              />
+            </n-form-item>
+            <n-form-item label="Node ID">
+              <n-input-number
+                v-model:value="codeForm.node_id"
+                :min="1"
+                style="width: 100%"
+                :disabled="codeLoading"
+              />
+            </n-form-item>
+            <n-form-item label="Transport">
+              <n-radio-group v-model:value="codeForm.transport" :disabled="codeLoading">
+                <n-radio-button value="network">Network (mDNS)</n-radio-button>
+                <n-radio-button value="ble">BLE</n-radio-button>
+              </n-radio-group>
+            </n-form-item>
+
+            <template v-if="codeForm.transport === 'ble'">
+              <n-form-item label="Wi-Fi SSID" required>
+                <n-input
+                  v-model:value="codeForm.wifi_ssid"
+                  placeholder="Home network"
+                  :disabled="codeLoading"
+                />
+              </n-form-item>
+              <n-form-item label="Wi-Fi Password">
+                <n-input
+                  v-model:value="codeForm.wifi_password"
+                  type="password"
+                  :disabled="codeLoading"
+                />
+              </n-form-item>
+            </template>
+
+            <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 16px">
+              <template v-if="codeForm.transport === 'ble'">
+                The device will be reached over Bluetooth and provisioned with the supplied Wi-Fi credentials.
+                Make sure Bluetooth is enabled and the device is in commissioning mode.
+              </template>
+              <template v-else>
+                The device will be discovered automatically on the network using the pairing code discriminator.
+                Make sure the device is in commissioning mode.
+              </template>
+            </n-text>
+
+            <n-button
+              type="primary"
+              attr-type="submit"
+              :loading="codeLoading"
+              :disabled="codeSubmitDisabled"
+              block
+            >
+              {{ codeLoading ? 'Commissioning...' : 'Commission Device' }}
+            </n-button>
+          </n-form>
+
+          <n-alert v-if="codeError" type="error" :title="codeError" style="margin-top: 16px" />
+        </n-card>
+      </n-tab-pane>
+
+      <!-- mDNS Scan Tab -->
       <n-tab-pane name="mdns" tab="mDNS (Network)">
         <div class="controls">
           <n-input-number v-model:value="mdnsTimeout" :min="2" :max="30" style="width: 120px" size="small" />
@@ -136,7 +253,7 @@ async function doCommission() {
         </n-spin>
       </n-tab-pane>
 
-      <!-- BLE Tab -->
+      <!-- BLE Scan Tab -->
       <n-tab-pane name="ble" tab="BLE">
         <div class="controls">
           <n-input-number v-model:value="bleTimeout" :min="2" :max="30" style="width: 120px" size="small" />
@@ -180,7 +297,7 @@ async function doCommission() {
       </n-tab-pane>
     </n-tabs>
 
-    <!-- Commission Dialog -->
+    <!-- Commission Dialog (mDNS and BLE) -->
     <n-modal v-model:show="showCommissionDialog" preset="dialog" title="Commission Device" style="width: 480px">
       <n-form label-placement="top">
         <n-form-item label="Device Name">

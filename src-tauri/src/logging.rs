@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::{
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
+    mpsc::{sync_channel, SyncSender},
     Mutex, OnceLock,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -44,7 +45,10 @@ fn u8_to_filter(v: u8) -> LevelFilter {
 struct UiLogger {
     buffer: Mutex<VecDeque<LogEntry>>,
     app: OnceLock<AppHandle>,
+    // Bounded channel feeding the 100ms batch emitter. try_send never blocks.
+    batch_tx: OnceLock<SyncSender<LogEntry>>,
     level: AtomicU8,
+    stdout: AtomicBool,
 }
 
 static LOGGER: OnceLock<UiLogger> = OnceLock::new();
@@ -79,8 +83,12 @@ impl Log for UiLogger {
             }
             buf.push_back(entry.clone());
         }
-        if let Some(handle) = self.app.get() {
-            let _ = handle.emit("log://entry", &entry);
+        if self.stdout.load(Ordering::Relaxed) {
+            println!("{:<5} [{}] {}", entry.level, entry.target, entry.message);
+        }
+        // Queue for batch emit; drop silently if the channel is full.
+        if let Some(tx) = self.batch_tx.get() {
+            let _ = tx.try_send(entry);
         }
     }
 
@@ -91,16 +99,35 @@ pub fn install() {
     let logger = LOGGER.get_or_init(|| UiLogger {
         buffer: Mutex::new(VecDeque::new()),
         app: OnceLock::new(),
+        batch_tx: OnceLock::new(),
         level: AtomicU8::new(filter_to_u8(LevelFilter::Debug)),
+        stdout: AtomicBool::new(false),
     });
     let _ = log::set_logger(logger);
     log::set_max_level(LevelFilter::Trace);
 }
 
 pub fn attach(handle: AppHandle) {
-    if let Some(logger) = LOGGER.get() {
-        let _ = logger.app.set(handle);
-    }
+    let Some(logger) = LOGGER.get() else { return };
+    let (tx, rx) = sync_channel::<LogEntry>(BUFFER_CAP);
+    let _ = logger.batch_tx.set(tx);
+    let _ = logger.app.set(handle.clone());
+
+    // Background task: drain the channel and emit a single batched event every 100ms.
+    // This prevents individual log calls from flooding the webview IPC queue.
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        loop {
+            interval.tick().await;
+            let mut batch: Vec<LogEntry> = Vec::new();
+            while let Ok(entry) = rx.try_recv() {
+                batch.push(entry);
+            }
+            if !batch.is_empty() {
+                let _ = handle.emit("log://batch", &batch);
+            }
+        }
+    });
 }
 
 pub fn snapshot(limit: Option<usize>) -> Vec<LogEntry> {
@@ -139,6 +166,18 @@ pub fn set_level(level: &str) -> Result<(), String> {
         logger.level.store(filter_to_u8(filter), Ordering::Relaxed);
     }
     Ok(())
+}
+
+pub fn set_stdout(enabled: bool) {
+    if let Some(logger) = LOGGER.get() {
+        logger.stdout.store(enabled, Ordering::Relaxed);
+    }
+}
+
+pub fn stdout_enabled() -> bool {
+    LOGGER
+        .get()
+        .map_or(false, |l| l.stdout.load(Ordering::Relaxed))
 }
 
 pub fn current_level() -> &'static str {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NTag, NTooltip, NSpin, NSpace } from 'naive-ui'
+import { NButton, NTag, NSpin, NSpace } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { useDevicesStore } from '../stores/devices'
 import DeviceCard from '../components/DeviceCard.vue'
@@ -49,13 +49,8 @@ const columns = computed<DataTableColumns<DeviceDto>>(() => [
         default: () => statusLabel(s),
         ...(s === 'checking' ? { icon: () => h(NSpin, { size: 12 }) } : {}),
       })
-      if (s === 'failed' && err) {
-        return h(NTooltip, { trigger: 'hover' }, {
-          trigger: () => tag,
-          default: () => err,
-        })
-      }
-      return tag
+      const title = s === 'failed' && err ? err : undefined
+      return h('span', { title }, tag)
     },
   },
   {
@@ -103,10 +98,7 @@ const columns = computed<DataTableColumns<DeviceDto>>(() => [
       <div v-if="!store.loading && store.devices.length === 0" class="empty-state">
         <n-empty description="No devices commissioned yet">
           <template #extra>
-            <n-space>
-              <n-button type="primary" tag="a" href="/commission">Commission by Code</n-button>
-              <n-button tag="a" href="/discover">Discover Devices</n-button>
-            </n-space>
+            <n-button type="primary" tag="a" href="/commission">Commission</n-button>
           </template>
         </n-empty>
       </div>
@@ -119,8 +111,6 @@ const columns = computed<DataTableColumns<DeviceDto>>(() => [
           :info="store.deviceInfo[device.node_id]"
           :status="store.deviceStatus[device.node_id]"
           :status-error="store.statusError[device.node_id]"
-          @rename="(name) => store.renameDevice(device.node_id, name)"
-          @remove="store.removeDevice(device.node_id)"
           @probe="handleProbe(device.node_id)"
         />
       </div>
