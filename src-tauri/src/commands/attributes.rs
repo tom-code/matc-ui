@@ -16,6 +16,17 @@ const ATTR_ID_ATTRIBUTE_LIST: u32 = 0xFFFB;
 const ATTR_ID_FEATURE_MAP: u32 = 0xFFFC;
 const ATTR_ID_CLUSTER_REVISION: u32 = 0xFFFD;
 
+struct DiscoveredCluster {
+    id: u32,
+    name: String,
+    attr_ids: Vec<u32>,
+}
+
+struct DiscoveredEndpoint {
+    id: u16,
+    clusters: Vec<DiscoveredCluster>,
+}
+
 fn decode_global_attr(attr_id: u32, tlv: &TlvItemValue) -> Option<String> {
     match attr_id {
         ATTR_ID_GENERATED_COMMAND_LIST
@@ -160,7 +171,7 @@ pub async fn read_attribute_tree(
     let endpoint_count = endpoints.len();
 
     // Phase 1: discover all endpoints - read ServerList and AttributeList for each cluster
-    let mut ep_discover: Vec<(u16, Vec<(u32, String, Vec<u32>)>)> = Vec::new();
+    let mut ep_discover: Vec<DiscoveredEndpoint> = Vec::new();
 
     for (ep_idx, &ep) in endpoints.iter().enumerate() {
         let _ = channel.send(AttrProgressEvent {
@@ -194,7 +205,7 @@ pub async fn read_attribute_tree(
             _ => continue,
         };
 
-        let mut cluster_attr_lists: Vec<(u32, String, Vec<u32>)> = Vec::new();
+        let mut cluster_attr_lists: Vec<DiscoveredCluster> = Vec::new();
         for cluster_id in cluster_ids {
             let cluster_name = names::get_cluster_name(cluster_id)
                 .unwrap_or("Unknown")
@@ -215,25 +226,25 @@ pub async fn read_attribute_tree(
                     .collect(),
                 _ => vec![],
             };
-            cluster_attr_lists.push((cluster_id, cluster_name, attr_ids));
+            cluster_attr_lists.push(DiscoveredCluster { id: cluster_id, name: cluster_name, attr_ids });
         }
-        ep_discover.push((ep, cluster_attr_lists));
+        ep_discover.push(DiscoveredEndpoint { id: ep, clusters: cluster_attr_lists });
     }
 
     // Grand total is now known: read phase can show a single 0->100% bar without resets
     let grand_total: usize = ep_discover
         .iter()
-        .flat_map(|(_, cls)| cls.iter())
-        .map(|(_, _, ids)| ids.len())
+        .flat_map(|ep| ep.clusters.iter())
+        .map(|c| c.attr_ids.len())
         .sum();
 
     // Phase 2: read all attribute values, reporting cumulative progress
     let mut global_attr_idx: usize = 0;
     let mut ep_nodes = Vec::new();
 
-    for (ep, cluster_attr_lists) in ep_discover {
+    for DiscoveredEndpoint { id: ep, clusters: cluster_attr_lists } in ep_discover {
         let mut cluster_nodes = Vec::new();
-        for (cluster_id, cluster_name, attr_ids) in cluster_attr_lists {
+        for DiscoveredCluster { id: cluster_id, name: cluster_name, attr_ids } in cluster_attr_lists {
             let mut attr_nodes = Vec::new();
             for attr_id in attr_ids {
                 let name = attr_name(cluster_id, attr_id);

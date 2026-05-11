@@ -177,7 +177,7 @@ pub fn set_stdout(enabled: bool) {
 pub fn stdout_enabled() -> bool {
     LOGGER
         .get()
-        .map_or(false, |l| l.stdout.load(Ordering::Relaxed))
+        .is_some_and(|l| l.stdout.load(Ordering::Relaxed))
 }
 
 pub fn current_level() -> &'static str {
