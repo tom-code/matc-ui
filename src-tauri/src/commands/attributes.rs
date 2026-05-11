@@ -226,9 +226,16 @@ pub async fn read_attribute_tree(
                     .collect(),
                 _ => vec![],
             };
-            cluster_attr_lists.push(DiscoveredCluster { id: cluster_id, name: cluster_name, attr_ids });
+            cluster_attr_lists.push(DiscoveredCluster {
+                id: cluster_id,
+                name: cluster_name,
+                attr_ids,
+            });
         }
-        ep_discover.push(DiscoveredEndpoint { id: ep, clusters: cluster_attr_lists });
+        ep_discover.push(DiscoveredEndpoint {
+            id: ep,
+            clusters: cluster_attr_lists,
+        });
     }
 
     // Grand total is now known: read phase can show a single 0->100% bar without resets
@@ -242,9 +249,18 @@ pub async fn read_attribute_tree(
     let mut global_attr_idx: usize = 0;
     let mut ep_nodes = Vec::new();
 
-    for DiscoveredEndpoint { id: ep, clusters: cluster_attr_lists } in ep_discover {
+    for DiscoveredEndpoint {
+        id: ep,
+        clusters: cluster_attr_lists,
+    } in ep_discover
+    {
         let mut cluster_nodes = Vec::new();
-        for DiscoveredCluster { id: cluster_id, name: cluster_name, attr_ids } in cluster_attr_lists {
+        for DiscoveredCluster {
+            id: cluster_id,
+            name: cluster_name,
+            attr_ids,
+        } in cluster_attr_lists
+        {
             let mut attr_nodes = Vec::new();
             for attr_id in attr_ids {
                 let name = attr_name(cluster_id, attr_id);
