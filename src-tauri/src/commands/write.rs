@@ -1,9 +1,28 @@
 use std::sync::Arc;
 
+use matc::clusters::{codec, names};
 use matc::tlv::TlvBuffer;
 use tauri::State;
 
 use crate::state::AppState;
+
+fn cluster_label(cluster: u32) -> String {
+    match names::get_cluster_name(cluster) {
+        Some(n) => format!("0x{:04x}({})", cluster, n),
+        None => format!("0x{:04x}", cluster),
+    }
+}
+
+fn attr_label(cluster: u32, attr_id: u32) -> String {
+    let name = codec::get_attribute_list(cluster)
+        .into_iter()
+        .find(|(id, _)| *id == attr_id)
+        .map(|(_, n)| n);
+    match name {
+        Some(n) => format!("0x{:04x}({})", attr_id, n),
+        None => format!("0x{:04x}", attr_id),
+    }
+}
 
 #[tauri::command]
 pub async fn write_attribute(
@@ -22,7 +41,6 @@ pub async fn write_attribute(
             buf.write_string(2, s).map_err(|e| e.to_string())?;
         }
         "integer" => {
-            // Determine integer as i128 to cover the full signed/unsigned range.
             let n: i128 = if let Some(v) = value.as_i64() {
                 v as i128
             } else if let Some(v) = value.as_u64() {
@@ -61,25 +79,43 @@ pub async fn write_attribute(
         other => return Err(format!("unsupported value_type: {}", other)),
     }
 
+    log::info!(
+        "write: node={} ep={} cluster={} attr={} type={} value={}",
+        node_id,
+        endpoint,
+        cluster_label(cluster),
+        attr_label(cluster, attr_id),
+        value_type,
+        value,
+    );
+
     let state = state.inner().clone();
-    let conn = get_conn(&state, node_id).await?;
-
-    conn.write_request(endpoint, cluster, attr_id, &buf.data)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn get_conn(
-    state: &Arc<AppState>,
-    node_id: u64,
-) -> Result<Arc<matc::controller::Connection>, String> {
-    match AppState::get_connection_with_retry(state, node_id).await {
-        Ok(c) => Ok(c),
-        Err(_) => {
-            AppState::drop_connection(state, node_id).await;
-            AppState::get_connection(state, node_id)
-                .await
-                .map_err(|e| e.to_string())
+    AppState::with_connection_retry(&state, node_id, |conn| {
+        let data = buf.data.clone();
+        async move {
+            conn.write_request(endpoint, cluster, attr_id, &data).await?;
+            Ok(())
         }
-    }
+    })
+    .await
+    .map(|()| {
+        log::info!(
+            "write ok: node={} ep={} cluster={} attr={}",
+            node_id,
+            endpoint,
+            cluster_label(cluster),
+            attr_label(cluster, attr_id),
+        );
+    })
+    .map_err(|e| {
+        log::error!(
+            "write failed: node={} ep={} cluster={} attr={} err={}",
+            node_id,
+            endpoint,
+            cluster_label(cluster),
+            attr_label(cluster, attr_id),
+            e,
+        );
+        e
+    })
 }

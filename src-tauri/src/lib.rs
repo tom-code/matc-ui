@@ -17,7 +17,10 @@ use commands::{
     commission::{
         commission_ble, commission_by_address, commission_by_code, open_commissioning_window,
     },
-    devices::{get_device_info, list_devices, remove_device, rename_device},
+    devices::{
+        get_device_info, get_device_statuses, list_devices, probe_device, remove_device,
+        rename_device,
+    },
     discovery::{discover_mdns, scan_ble},
     invoke::{invoke_command, invoke_command_typed},
     logs::{
@@ -26,7 +29,49 @@ use commands::{
     },
     write::write_attribute,
 };
-use state::AppState;
+use state::{AppState, DeviceStatus};
+
+async fn sweep(state: &Arc<AppState>, app: &tauri::AppHandle) {
+    let devices = match state.devman.list_devices() {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("sweep: list_devices failed: {}", e);
+            return;
+        }
+    };
+
+    let needs_probe: Vec<u64> = {
+        let map = state.device_status.lock().await;
+        devices
+            .iter()
+            .filter(|d| {
+                matches!(
+                    map.get(&d.node_id).map(|e| e.status),
+                    None | Some(DeviceStatus::Unknown) | Some(DeviceStatus::Failed)
+                )
+            })
+            .map(|d| d.node_id)
+            .collect()
+    };
+
+    if needs_probe.is_empty() {
+        return;
+    }
+
+    log::debug!("sweep: probing {} device(s)", needs_probe.len());
+    let sem = Arc::new(tokio::sync::Semaphore::new(4));
+    let mut set = tokio::task::JoinSet::new();
+    for node_id in needs_probe {
+        let sem = sem.clone();
+        let state = state.clone();
+        let app = app.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+            let _ = probe_device(&state, &app, node_id, false).await;
+        });
+    }
+    while set.join_next().await.is_some() {}
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -66,13 +111,28 @@ pub fn run() {
             });
 
             let app_state = Arc::new(AppState::new(devman));
-            app.manage(app_state);
+            app.manage(app_state.clone());
+            app_state.set_app_handle(app.handle().clone());
             logging::attach(app.handle().clone());
+
+            let st = app_state.clone();
+            let ah = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+                loop {
+                    tokio::select! {
+                        _ = tick.tick() => sweep(&st, &ah).await,
+                        _ = st.probe_kick.notified() => sweep(&st, &ah).await,
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             list_devices,
             get_device_info,
+            get_device_statuses,
             rename_device,
             remove_device,
             commission_by_code,

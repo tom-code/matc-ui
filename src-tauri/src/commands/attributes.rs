@@ -9,6 +9,24 @@ use tauri::{ipc::Channel, State};
 
 use crate::state::AppState;
 
+fn cluster_label(cluster: u32) -> String {
+    match matc::clusters::names::get_cluster_name(cluster) {
+        Some(n) => format!("0x{:04x}({})", cluster, n),
+        None => format!("0x{:04x}", cluster),
+    }
+}
+
+fn attr_label(cluster: u32, attr_id: u32) -> String {
+    let name = matc::clusters::codec::get_attribute_list(cluster)
+        .into_iter()
+        .find(|(id, _)| *id == attr_id)
+        .map(|(_, n)| n);
+    match name {
+        Some(n) => format!("0x{:04x}({})", attr_id, n),
+        None => format!("0x{:04x}", attr_id),
+    }
+}
+
 const ATTR_ID_GENERATED_COMMAND_LIST: u32 = 0xFFF8;
 const ATTR_ID_ACCEPTED_COMMAND_LIST: u32 = 0xFFF9;
 const ATTR_ID_EVENT_LIST: u32 = 0xFFFA;
@@ -124,8 +142,11 @@ pub async fn read_attribute_tree(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
+    log::debug!("read_attribute_tree: node={} force_refresh={}", node_id, force_refresh);
+
     if !force_refresh {
         if let Some(cached) = state.cache_get_attributes::<EndpointTree>(node_id).await {
+            log::debug!("read_attribute_tree: node={} cache hit", node_id);
             return Ok(cached);
         }
     }
@@ -140,14 +161,12 @@ pub async fn read_attribute_tree(
         current_cluster: None,
     });
 
-    let conn = get_conn(&state, node_id).await?;
-
-    let parts_tlv = conn
-        .read_request2(
-            0,
-            CLUSTER_ID_DESCRIPTOR,
-            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
-        )
+    let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
+        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
+            .await
+    })
+    .await?;
+    let conn = AppState::get_connection(&state, node_id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -315,6 +334,12 @@ pub async fn read_attribute_tree(
     let tree = EndpointTree {
         endpoints: ep_nodes,
     };
+    log::debug!(
+        "read_attribute_tree: node={} done endpoints={} attrs={}",
+        node_id,
+        tree.endpoints.len(),
+        grand_total,
+    );
     state.cache_set_attributes(node_id, &tree).await;
     Ok(tree)
 }
@@ -328,24 +353,23 @@ pub async fn read_device_tree(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
+    log::debug!("read_device_tree: node={} force_refresh={}", node_id, force_refresh);
+
     if !force_refresh {
         if let Some(cached) = state.cache_get_device_tree::<EndpointTree>(node_id).await {
+            log::debug!("read_device_tree: node={} cache hit", node_id);
             return Ok(cached);
         }
     }
 
-    let conn = get_conn(&state, node_id).await?;
-
     // EP 0 PartsList enumerates all other endpoints on the device
     let mut endpoint_ids: Vec<u16> = vec![0];
-    if let Ok(TlvItemValue::List(items)) = conn
-        .read_request2(
-            0,
-            CLUSTER_ID_DESCRIPTOR,
-            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
-        )
-        .await
-    {
+    let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
+        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
+            .await
+    })
+    .await?;
+    if let TlvItemValue::List(items) = parts_tlv {
         for item in &items {
             if let TlvItemValue::Int(v) = item.value {
                 endpoint_ids.push(v as u16);
@@ -354,6 +378,9 @@ pub async fn read_device_tree(
     }
     endpoint_ids.sort();
     endpoint_ids.dedup();
+    let conn = AppState::get_connection(&state, node_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut ep_nodes = Vec::new();
     for ep in endpoint_ids {
@@ -428,6 +455,7 @@ pub async fn read_device_tree(
             let info_attrs = [
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME, "VendorName"),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME, "ProductName"),
+                (CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTLABEL, "ProductLabel"),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_NODELABEL, "NodeLabel"),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_REACHABLE, "Reachable"),
             ];
@@ -460,6 +488,11 @@ pub async fn read_device_tree(
     let tree = EndpointTree {
         endpoints: ep_nodes,
     };
+    log::debug!(
+        "read_device_tree: node={} done endpoints={}",
+        node_id,
+        tree.endpoints.len(),
+    );
     state.cache_set_device_tree(node_id, &tree).await;
     Ok(tree)
 }
@@ -473,23 +506,22 @@ pub async fn read_endpoint_structure(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
+    log::debug!("read_endpoint_structure: node={} force_refresh={}", node_id, force_refresh);
+
     if !force_refresh {
         if let Some(cached) = state.cache_get_structure::<EndpointTree>(node_id).await {
+            log::debug!("read_endpoint_structure: node={} cache hit", node_id);
             return Ok(cached);
         }
     }
 
-    let conn = get_conn(&state, node_id).await?;
-
     let mut endpoint_ids: Vec<u16> = vec![0];
-    if let Ok(TlvItemValue::List(items)) = conn
-        .read_request2(
-            0,
-            CLUSTER_ID_DESCRIPTOR,
-            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
-        )
-        .await
-    {
+    let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
+        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
+            .await
+    })
+    .await?;
+    if let TlvItemValue::List(items) = parts_tlv {
         for item in &items {
             if let TlvItemValue::Int(v) = item.value {
                 endpoint_ids.push(v as u16);
@@ -498,6 +530,9 @@ pub async fn read_endpoint_structure(
     }
     endpoint_ids.sort();
     endpoint_ids.dedup();
+    let conn = AppState::get_connection(&state, node_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut ep_nodes = Vec::new();
     for ep in endpoint_ids {
@@ -539,6 +574,11 @@ pub async fn read_endpoint_structure(
     let tree = EndpointTree {
         endpoints: ep_nodes,
     };
+    log::debug!(
+        "read_endpoint_structure: node={} done endpoints={}",
+        node_id,
+        tree.endpoints.len(),
+    );
     state.cache_set_structure(node_id, &tree).await;
     Ok(tree)
 }
@@ -552,26 +592,38 @@ pub async fn read_single_attribute(
     attr_id: u32,
 ) -> Result<String, String> {
     let state = state.inner().clone();
-    let conn = get_conn(&state, node_id).await?;
-    let value = conn
-        .read_request2(endpoint, cluster, attr_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(codec::decode_attribute_json(cluster, attr_id, &value))
-}
-
-async fn get_conn(
-    state: &Arc<AppState>,
-    node_id: u64,
-) -> Result<Arc<matc::controller::Connection>, String> {
-    let has_cache = state.connections.lock().await.contains_key(&node_id);
-    if has_cache {
-        match AppState::get_connection_with_retry(state, node_id).await {
-            Ok(c) => return Ok(c),
-            Err(_) => AppState::drop_connection(state, node_id).await,
+    log::debug!(
+        "read: node={} ep={} cluster={} attr={}",
+        node_id,
+        endpoint,
+        cluster_label(cluster),
+        attr_label(cluster, attr_id),
+    );
+    let result = AppState::with_connection_retry(&state, node_id, |conn| async move {
+        let value = conn.read_request2(endpoint, cluster, attr_id).await?;
+        Ok(codec::decode_attribute_json(cluster, attr_id, &value))
+    })
+    .await;
+    match &result {
+        Ok(v) => {
+            let truncated = if v.len() > 200 { &v[..200] } else { v.as_str() };
+            log::debug!(
+                "read ok: node={} ep={} cluster={} attr={} value={}",
+                node_id,
+                endpoint,
+                cluster_label(cluster),
+                attr_label(cluster, attr_id),
+                truncated,
+            );
         }
+        Err(e) => log::debug!(
+            "read failed: node={} ep={} cluster={} attr={} err={}",
+            node_id,
+            endpoint,
+            cluster_label(cluster),
+            attr_label(cluster, attr_id),
+            e,
+        ),
     }
-    AppState::get_connection(state, node_id)
-        .await
-        .map_err(|e| e.to_string())
+    result
 }

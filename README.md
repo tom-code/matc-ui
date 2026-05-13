@@ -1,60 +1,71 @@
-# matc-ui
+# Matter Controller
 
-Desktop GUI for the [Matter](https://csa-iot.org/developer-resource/specifications-download-request/) protocol controller library ([rust-matc](../rust-matc)).
+A desktop application for commissioning and controlling [Matter](https://csa-iot.org/developer-resource/specifications-download-request/) smart home devices. Runs on macOS, Windows, and Linux.
 
-Built with Tauri 2, Vue 3, and TypeScript.
+## What it does
 
-## Features
+- **Discover** commissionable devices on your network via mDNS or Bluetooth
+- **Commission** devices using a pairing code, IP address, or BLE
+- **Monitor** all commissioned devices and their reachability status
+- **Inspect** the full attribute tree of any device -- every endpoint, cluster, and attribute readable from the device
+- **Control** lights, dimmers, and other controllable devices directly from the UI
+- **Send commands** to any cluster on any endpoint
+- **Write attributes** directly to a device with full control over value type
 
-- Discover commissionable devices via mDNS or BLE
-- Commission devices by pairing code or IP address
-- List commissioned devices and check reachability
-- Browse full attribute tree (by endpoint and cluster)
-- Send arbitrary commands to any device
+## Download
+
+Download the latest release from the [Releases](../../releases) page and pick the package for your platform:
+
+| Platform | Installer | Portable |
+|---|---|---|
+| macOS | `.dmg` | `.zip` (drag-and-drop `.app`) |
+| Windows | `.msi` | `.zip` (single `.exe`) |
+| Linux | `.deb` or `.AppImage` | `.zip` (single binary) |
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable)
-- Node.js >= 18
-- Tauri CLI and platform dependencies: see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
-- The `rust-matc` library checked out at `../rust-matc`
+### macOS: BLE commissioning
 
-### macOS: BLE Matter commissioning
+To commission devices over Bluetooth, you need the **Bluetooth Central Matter Client Developer Mode** profile installed on your Mac. This is a `.mobileconfig` file available from the Apple Developer portal. Without it, macOS blocks BLE Matter setup.
 
-BLE commissioning requires the **Bluetooth Central Matter Client Developer Mode profile** (a `.mobileconfig` from the Apple Developer portal) to be installed on the Mac. Without it, macOS blocks the BLE Matter setup flow. Download it from your Apple Developer account and double-click to install via System Settings.
+1. Download the profile from your Apple Developer account
+2. Double-click the downloaded `.mobileconfig` file
+3. Open **System Settings > Privacy & Security > Profiles** and approve the installation
+
+This step is only needed if you plan to commission devices over Bluetooth. mDNS and pairing-code commissioning work without it.
+
+## First launch
+
+On first launch the app creates a new Matter fabric automatically. No configuration is needed.
+
+Matter state (fabric config, device registry, certificates) is stored in a platform-specific directory:
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/com.matc.ui/matc/` |
+| Windows | `%APPDATA%\com.matc.ui\matc\` |
+| Linux | `~/.local/share/com.matc.ui/matc/` |
+
+To reset the app to a clean state, delete that directory and relaunch.
+
+## Usage
+
+### Commissioning a device
+
+Open the **Commission** tab. You can:
+
+- Enter a **pairing code** from the device label or QR code
+- Scan the local network with **mDNS Scan** and commission a discovered device
+- Use **BLE Scan** to find and commission a device over Bluetooth (requires the profile above)
+
+### Controlling devices
+
+The **Control** tab shows all commissioned endpoints that support OnOff, Level, or Color Control. Use the toggle, slider, or color swatch to send commands instantly.
+
+### Inspecting attributes
+
+Open a device from the **Devices** tab, then switch to the **Attributes** tab. The app reads every endpoint, cluster, and attribute directly from the device and displays the full tree with decoded values. Use the **Send Command** tab to send raw cluster commands, or **Write** to set an attribute value.
 
 ## Development
 
-```bash
-npm install
-npm run tauri dev       # hot-reload frontend + debug Rust build
-```
-
-## Build
-
-```bash
-npm run tauri build
-```
-
-On macOS, to skip code signing for local builds:
-
-```bash
-APPLE_SIGNING_IDENTITY="" npm run tauri build
-```
-
-Output binary: `src-tauri/target/release/bundle/`
-
-## Data directory
-
-Matter state is stored in `~/Library/Application Support/com.matc.ui/matc/` and contains the fabric config, device registry, and certificates. Delete this directory to reset to factory state.
-
-## Stack
-
-| Layer | Technology |
-|---|---|
-| Desktop shell | Tauri 2 |
-| Frontend | Vue 3 + TypeScript + Vite |
-| UI components | Naive UI |
-| State management | Pinia |
-| Routing | Vue Router |
-| Backend | Rust + rust-matc |
+See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions and project internals.

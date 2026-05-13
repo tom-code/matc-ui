@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::{commands::devices::DeviceDto, state::AppState};
+use crate::{
+    commands::devices::DeviceDto,
+    state::{AppState, DeviceStatus},
+};
 
 #[derive(serde::Serialize)]
 pub struct OpenCommissioningWindowResultDto {
@@ -22,21 +25,28 @@ pub async fn commission_by_code(
     name: String,
 ) -> Result<DeviceDto, String> {
     let state = state.inner().clone();
+    log::info!("commission_by_code: node={} name={}", node_id, name);
     let conn = {
         let dm = &state.devman;
         dm.commission_with_code(&pairing_code, node_id, &name)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                log::error!("commission_by_code failed: node={} err={}", node_id, e);
+                e.to_string()
+            })?
     };
     let conn = Arc::new(conn);
     AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
+    state.set_status(node_id, DeviceStatus::Unknown, None).await;
+    state.probe_kick.notify_one();
 
     let dev = state
         .devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
+    log::info!("commission_by_code: ok node={} addr={}", node_id, dev.address);
     Ok(DeviceDto {
         node_id: dev.node_id,
         name: dev.name,
@@ -53,21 +63,28 @@ pub async fn commission_by_address(
     name: String,
 ) -> Result<DeviceDto, String> {
     let state = state.inner().clone();
+    log::info!("commission_by_address: node={} addr={} name={}", node_id, address, name);
     let conn = {
         let dm = &state.devman;
         dm.commission(&address, pin, node_id, &name)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                log::error!("commission_by_address failed: node={} err={}", node_id, e);
+                e.to_string()
+            })?
     };
     let conn = Arc::new(conn);
     AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
+    state.set_status(node_id, DeviceStatus::Unknown, None).await;
+    state.probe_kick.notify_one();
 
     let dev = state
         .devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
+    log::info!("commission_by_address: ok node={} addr={}", node_id, dev.address);
     Ok(DeviceDto {
         node_id: dev.node_id,
         name: dev.name,
@@ -91,21 +108,28 @@ pub async fn commission_ble(
         creds: wifi_password.into(),
     };
     let state = state.inner().clone();
+    log::info!("commission_ble: node={} name={}", node_id, name);
     let conn = {
         let dm = &state.devman;
         dm.commission_ble_with_code(&pairing_code, node_id, &name, creds)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                log::error!("commission_ble failed: node={} err={}", node_id, e);
+                e.to_string()
+            })?
     };
     let conn = Arc::new(conn);
     AppState::drop_cache(&state, node_id).await;
     state.connections.lock().await.insert(node_id, conn);
+    state.set_status(node_id, DeviceStatus::Unknown, None).await;
+    state.probe_kick.notify_one();
 
     let dev = state
         .devman
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
+    log::info!("commission_ble: ok node={} addr={}", node_id, dev.address);
     Ok(DeviceDto {
         node_id: dev.node_id,
         name: dev.name,
@@ -129,16 +153,7 @@ pub async fn open_commissioning_window(
     };
 
     let state = state.inner().clone();
-
-    let conn = match AppState::get_connection_with_retry(&state, node_id).await {
-        Ok(c) => c,
-        Err(_) => {
-            AppState::drop_connection(&state, node_id).await;
-            AppState::get_connection(&state, node_id)
-                .await
-                .map_err(|e| e.to_string())?
-        }
-    };
+    log::info!("open_commissioning_window: node={} discriminator={}", node_id, discriminator);
 
     let mut salt = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
@@ -155,16 +170,24 @@ pub async fn open_commissioning_window(
     )
     .map_err(|e| e.to_string())?;
 
-    let resp = conn
-        .invoke_request_timed(
-            0,
-            CLUSTER_ID_ADMINISTRATOR_COMMISSIONING,
-            CLUSTER_ADMINISTRATOR_COMMISSIONING_CMD_ID_OPENCOMMISSIONINGWINDOW,
-            &payload,
-            6000,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let resp = AppState::with_connection_retry(&state, node_id, |conn| {
+        let payload = payload.clone();
+        async move {
+            conn.invoke_request_timed(
+                0,
+                CLUSTER_ID_ADMINISTRATOR_COMMISSIONING,
+                CLUSTER_ADMINISTRATOR_COMMISSIONING_CMD_ID_OPENCOMMISSIONINGWINDOW,
+                &payload,
+                6000,
+            )
+            .await
+        }
+    })
+    .await
+    .map_err(|e| {
+        log::error!("open_commissioning_window failed: node={} err={}", node_id, e);
+        e.to_string()
+    })?;
 
     let (_, status) = matc::messages::parse_im_invoke_resp(&resp.tlv).map_err(|e| e.to_string())?;
 
@@ -178,6 +201,12 @@ pub async fn open_commissioning_window(
             discovery_capabilities: None,
         });
 
+    log::info!(
+        "open_commissioning_window: ok node={} status={} code={}",
+        node_id,
+        status,
+        manual_pairing_code,
+    );
     Ok(OpenCommissioningWindowResultDto {
         status,
         manual_pairing_code,

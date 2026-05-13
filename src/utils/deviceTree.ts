@@ -9,11 +9,13 @@ const CLUSTER_BRIDGED_DEVICE_BASIC_INFORMATION = 0x0039
 const ATTR_VENDOR_NAME = 0x0001
 const ATTR_PRODUCT_NAME = 0x0003
 const ATTR_NODE_LABEL = 0x0005
+const ATTR_PRODUCT_LABEL = 0x000e
 const ATTR_REACHABLE = 0x0011
 
 export const DEVICE_TYPE_AGGREGATOR = 0x000e
 export const DEVICE_TYPE_BRIDGED_NODE = 0x0013
 export const DEVICE_TYPE_ROOT_NODE = 0x0016
+export const DEVICE_TYPE_POWER_SOURCE = 0x0011
 
 export interface DeviceTypeDef {
   id: number
@@ -26,6 +28,7 @@ export interface EndpointSummary {
   parts: number[]
   label: string | null
   productName: string | null
+  productLabel: string | null
   vendorName: string | null
   reachable: boolean | null
 }
@@ -64,10 +67,11 @@ export function summarizeEndpoint(ep: EndpointNode): EndpointSummary {
 
   const label = parseJson<string>(findAttrValue(ep, infoCluster, ATTR_NODE_LABEL))
   const productName = parseJson<string>(findAttrValue(ep, infoCluster, ATTR_PRODUCT_NAME))
+  const productLabel = parseJson<string>(findAttrValue(ep, infoCluster, ATTR_PRODUCT_LABEL))
   const vendorName = parseJson<string>(findAttrValue(ep, infoCluster, ATTR_VENDOR_NAME))
   const reachable = parseJson<boolean>(findAttrValue(ep, infoCluster, ATTR_REACHABLE))
 
-  return { endpoint: ep.id, deviceTypes, parts, label, productName, vendorName, reachable }
+  return { endpoint: ep.id, deviceTypes, parts, label, productName, productLabel, vendorName, reachable }
 }
 
 // Returns the primary device type to display: skip Root Node and Bridged Node,
@@ -145,4 +149,21 @@ export function buildDeviceTree(tree: EndpointTree): DeviceTreeData {
     .sort((a, b) => a - b)
 
   return { byEndpoint, childrenOf, roots }
+}
+
+// Walk from epId up the parentOf chain and return the first non-empty productLabel found.
+export function findInheritedProductLabel(
+  epId: number,
+  byEndpoint: Map<number, EndpointSummary>,
+  parentOf: Map<number, number>,
+): string | undefined {
+  const visited = new Set<number>()
+  let cur: number | undefined = epId
+  while (cur != null && !visited.has(cur)) {
+    visited.add(cur)
+    const s = byEndpoint.get(cur)
+    if (s?.productLabel && s.productLabel.length > 0) return s.productLabel
+    cur = parentOf.get(cur)
+  }
+  return undefined
 }

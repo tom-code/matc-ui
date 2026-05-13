@@ -20,12 +20,10 @@ watch(viewMode, v => localStorage.setItem('devices.viewMode', v))
 
 onMounted(async () => {
   await store.fetchDevices()
-  store.probeAllDevices()
 })
 
 async function handleRefresh() {
   await store.fetchDevices()
-  store.probeAllDevices()
 }
 
 function handleProbe(nodeId: number) {

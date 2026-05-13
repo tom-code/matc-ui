@@ -182,9 +182,6 @@ async function refresh() {
 
 onMounted(async () => {
   if (store.devices.length === 0) await store.fetchDevices()
-  if (store.deviceStatus[nodeId] !== 'checking') {
-    store.fetchDeviceInfo(nodeId).catch(() => {})
-  }
 })
 </script>
 

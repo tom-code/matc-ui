@@ -4,7 +4,7 @@ use matc::clusters::defs::*;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::state::AppState;
+use crate::state::{AppState, DeviceStatus, DeviceStatusDto, emit_device_status};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceDto {
@@ -25,29 +25,78 @@ pub struct DeviceInfoDto {
     pub has_aggregator: bool,
 }
 
-#[tauri::command]
-pub async fn list_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceDto>, String> {
-    let dm = &state.devman;
-    let devices = dm.list_devices().map_err(|e| e.to_string())?;
-    Ok(devices
-        .into_iter()
-        .map(|d| DeviceDto {
-            node_id: d.node_id,
-            name: d.name,
-            address: d.address,
-        })
-        .collect())
+
+/// Probe a single device: acquires the per-node probe lock, updates backend status,
+/// emits device://status events, and returns the DeviceInfoDto on success.
+/// Called by get_device_info (manual) and the background sweep (automatic).
+pub(crate) async fn probe_device(
+    state: &Arc<AppState>,
+    app: &tauri::AppHandle,
+    node_id: u64,
+    force_refresh: bool,
+) -> Result<DeviceInfoDto, String> {
+    let probe_lock = AppState::probe_lock_for(state, node_id);
+    let _guard = probe_lock.lock().await;
+
+    let changed = state
+        .set_status(node_id, DeviceStatus::Checking, None)
+        .await;
+    if changed {
+        log::debug!("status: node={} -> checking", node_id);
+        emit_device_status(
+            app,
+            DeviceStatusDto {
+                node_id,
+                status: DeviceStatus::Checking,
+                error: None,
+                info: None,
+            },
+        );
+    }
+
+    let result = do_probe(state, node_id, force_refresh).await;
+
+    match result {
+        Ok(ref info) => {
+            state
+                .set_status(node_id, DeviceStatus::Connected, None)
+                .await;
+            log::info!("status: node={} -> connected ({})", node_id, info.address);
+            emit_device_status(
+                app,
+                DeviceStatusDto {
+                    node_id,
+                    status: DeviceStatus::Connected,
+                    error: None,
+                    info: serde_json::to_value(info).ok(),
+                },
+            );
+        }
+        Err(ref e) => {
+            state
+                .set_status(node_id, DeviceStatus::Failed, Some(e.clone()))
+                .await;
+            log::warn!("status: node={} -> failed err={}", node_id, e);
+            emit_device_status(
+                app,
+                DeviceStatusDto {
+                    node_id,
+                    status: DeviceStatus::Failed,
+                    error: Some(e.clone()),
+                    info: None,
+                },
+            );
+        }
+    }
+
+    result
 }
 
-#[tauri::command]
-pub async fn get_device_info(
-    state: State<'_, Arc<AppState>>,
+async fn do_probe(
+    state: &Arc<AppState>,
     node_id: u64,
-    force_refresh: Option<bool>,
+    force_refresh: bool,
 ) -> Result<DeviceInfoDto, String> {
-    let force_refresh = force_refresh.unwrap_or(false);
-    let state = state.inner().clone();
-
     let (name, address) = {
         let dm = &state.devman;
         let dev = dm
@@ -57,10 +106,14 @@ pub async fn get_device_info(
         (dev.name.clone(), dev.address.clone())
     };
 
-    // Establishing the connection serves as the liveness check even when returning
-    // cached attribute data. If the device is unreachable, this returns an error
-    // and the frontend marks the device as failed.
-    let conn = get_conn_with_retry(&state, node_id).await?;
+    // Establishing the connection serves as the liveness check for the
+    // force_refresh=false + cache-hit path. If the CASE session is missing
+    // (e.g., first probe after restart), this does the handshake.
+    // For cached sessions, stale-session recovery happens below in the reads,
+    // via with_connection_retry.
+    AppState::get_connection(state, node_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     if !force_refresh {
         if let Some(mut cached) = state.cache_get_info::<DeviceInfoDto>(node_id).await {
@@ -71,27 +124,35 @@ pub async fn get_device_info(
         }
     }
 
+    // Cache miss or force_refresh: read from device.
+    // with_connection_retry handles a stale session from power-cycle.
     let vendor_name = match tokio::time::timeout(
         Duration::from_secs(4),
-        conn.read_request2(
-            0,
-            CLUSTER_ID_BASIC_INFORMATION,
-            CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME,
-        ),
+        AppState::with_connection_retry(state, node_id, |conn| async move {
+            conn.read_request2(
+                0,
+                CLUSTER_ID_BASIC_INFORMATION,
+                CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME,
+            )
+            .await
+        }),
     )
     .await
     {
         Ok(Ok(matc::tlv::TlvItemValue::String(s))) => s,
         Ok(Ok(v)) => format!("{:?}", v),
-        Ok(Err(e)) => {
-            AppState::drop_connection(&state, node_id).await;
-            return Err(e.to_string());
-        }
+        Ok(Err(e)) => return Err(e),
         Err(_) => {
-            AppState::drop_connection(&state, node_id).await;
+            AppState::drop_connection(state, node_id).await;
             return Err("read timed out".to_string());
         }
     };
+
+    // with_connection_retry may have reconnected; get_connection returns the
+    // now-cached (possibly fresh) conn for the remaining reads.
+    let conn = AppState::get_connection(state, node_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let product_name = read_string(
         &conn,
@@ -129,6 +190,107 @@ pub async fn get_device_info(
     };
     state.cache_set_info(node_id, &result).await;
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn list_devices(state: State<'_, Arc<AppState>>) -> Result<Vec<DeviceDto>, String> {
+    let dm = &state.devman;
+    let devices = dm.list_devices().map_err(|e| e.to_string())?;
+    Ok(devices
+        .into_iter()
+        .map(|d| DeviceDto {
+            node_id: d.node_id,
+            name: d.name,
+            address: d.address,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_device_info(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+    node_id: u64,
+    force_refresh: Option<bool>,
+) -> Result<DeviceInfoDto, String> {
+    let force_refresh = force_refresh.unwrap_or(false);
+    let state = state.inner().clone();
+    probe_device(&state, &app, node_id, force_refresh).await
+}
+
+#[tauri::command]
+pub async fn get_device_statuses(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<DeviceStatusDto>, String> {
+    let devices = state.devman.list_devices().map_err(|e| e.to_string())?;
+    let snapshots: Vec<(u64, DeviceStatus, Option<String>)> = {
+        let map = state.device_status.lock().await;
+        devices
+            .iter()
+            .map(|d| {
+                let entry = map.get(&d.node_id);
+                (
+                    d.node_id,
+                    entry.map(|e| e.status).unwrap_or(DeviceStatus::Unknown),
+                    entry.and_then(|e| e.error.clone()),
+                )
+            })
+            .collect()
+    };
+    let mut result = Vec::new();
+    for (node_id, status, error) in snapshots {
+        let info = if status == DeviceStatus::Connected {
+            state
+                .cache_get_info::<DeviceInfoDto>(node_id)
+                .await
+                .and_then(|i| serde_json::to_value(i).ok())
+        } else {
+            None
+        };
+        result.push(DeviceStatusDto {
+            node_id,
+            status,
+            error,
+            info,
+        });
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn rename_device(
+    state: State<'_, Arc<AppState>>,
+    node_id: u64,
+    name: String,
+) -> Result<(), String> {
+    let dm = &state.devman;
+    dm.rename_device(node_id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_device(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+    node_id: u64,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    log::info!("remove: node={}", node_id);
+    AppState::drop_connection(&state, node_id).await;
+    AppState::drop_cache(&state, node_id).await;
+    state.remove_status(node_id).await;
+    let dm = &state.devman;
+    dm.remove_device(node_id).map_err(|e| e.to_string())?;
+    log::info!("status: node={} -> removed", node_id);
+    emit_device_status(
+        &app,
+        DeviceStatusDto {
+            node_id,
+            status: DeviceStatus::Removed,
+            error: None,
+            info: None,
+        },
+    );
+    Ok(())
 }
 
 async fn read_string(
@@ -184,37 +346,3 @@ async fn read_has_aggregator(conn: &Arc<matc::controller::Connection>) -> bool {
     false
 }
 
-#[tauri::command]
-pub async fn rename_device(
-    state: State<'_, Arc<AppState>>,
-    node_id: u64,
-    name: String,
-) -> Result<(), String> {
-    let dm = &state.devman;
-    dm.rename_device(node_id, &name).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn remove_device(state: State<'_, Arc<AppState>>, node_id: u64) -> Result<(), String> {
-    let state = state.inner().clone();
-    AppState::drop_connection(&state, node_id).await;
-    AppState::drop_cache(&state, node_id).await;
-    let dm = &state.devman;
-    dm.remove_device(node_id).map_err(|e| e.to_string())
-}
-
-async fn get_conn_with_retry(
-    state: &Arc<AppState>,
-    node_id: u64,
-) -> Result<Arc<matc::controller::Connection>, String> {
-    let has_cache = state.connections.lock().await.contains_key(&node_id);
-    if has_cache {
-        match AppState::get_connection_with_retry(state, node_id).await {
-            Ok(c) => return Ok(c),
-            Err(_) => AppState::drop_connection(state, node_id).await,
-        }
-    }
-    AppState::get_connection(state, node_id)
-        .await
-        .map_err(|e| e.to_string())
-}

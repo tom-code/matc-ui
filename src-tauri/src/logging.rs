@@ -101,7 +101,7 @@ pub fn install() {
         app: OnceLock::new(),
         batch_tx: OnceLock::new(),
         level: AtomicU8::new(filter_to_u8(LevelFilter::Debug)),
-        stdout: AtomicBool::new(false),
+        stdout: AtomicBool::new(true),
     });
     let _ = log::set_logger(logger);
     log::set_max_level(LevelFilter::Trace);

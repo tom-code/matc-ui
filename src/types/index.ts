@@ -1,5 +1,12 @@
 export type DeviceConnectionStatus = 'unknown' | 'checking' | 'connected' | 'failed'
 
+export interface DeviceStatusDto {
+  node_id: number
+  status: DeviceConnectionStatus | 'removed'
+  error: string | null
+  info: DeviceInfoDto | null
+}
+
 export interface DeviceDto {
   node_id: number
   name: string

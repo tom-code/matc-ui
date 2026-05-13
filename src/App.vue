@@ -4,6 +4,8 @@ import { RouterView, useRouter, useRoute } from 'vue-router'
 import type { MenuOption } from 'naive-ui'
 import { getVersion } from '@tauri-apps/api/app'
 import { useThemeStore } from './stores/theme'
+import { useDevicesStore } from './stores/devices'
+import { useControlStore } from './stores/control'
 
 const version = ref('')
 onMounted(async () => {
@@ -17,6 +19,13 @@ onMounted(async () => {
 const router = useRouter()
 const route = useRoute()
 const themeStore = useThemeStore()
+
+// Start the global device status subscription once at app root.
+// Uses a module-level flag so navigation never creates duplicate listeners.
+useDevicesStore().init()
+// Instantiate the control store now so its status watcher is active from the
+// very first device://status event, not only after the user visits /control.
+useControlStore()
 
 const menuOptions: MenuOption[] = [
   { label: 'Devices', key: '/devices' },
@@ -63,7 +72,7 @@ function activeKey() {
             </n-breadcrumb>
           </n-layout-header>
 
-          <n-layout-content content-style="padding: 24px; overflow: auto; height: calc(100vh - 48px)">
+          <n-layout-content :content-style="`padding: 24px; overflow: auto; height: calc(100vh - 48px)${!themeStore.isDark ? '; background: #f4f4f5' : ''}`">
             <RouterView />
           </n-layout-content>
         </n-layout>
