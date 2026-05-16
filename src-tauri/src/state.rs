@@ -104,7 +104,9 @@ impl AppState {
     }
 
     pub async fn mark_failed_and_emit(&self, node_id: u64, error: String) {
-        let changed = self.set_status(node_id, DeviceStatus::Failed, Some(error.clone())).await;
+        let changed = self
+            .set_status(node_id, DeviceStatus::Failed, Some(error.clone()))
+            .await;
         // Clear the cached DeviceInfoDto so the next sweep probe cannot shortcut
         // to a stale cache hit. do_probe returns Ok(cached) when info is present,
         // bypassing any actual network read.
@@ -114,27 +116,35 @@ impl AppState {
         if changed {
             log::warn!("status: node={} -> failed (retry): {}", node_id, error);
             if let Some(app) = self.app_handle.get() {
-                emit_device_status(app, DeviceStatusDto {
-                    node_id,
-                    status: DeviceStatus::Failed,
-                    error: Some(error),
-                    info: None,
-                });
+                emit_device_status(
+                    app,
+                    DeviceStatusDto {
+                        node_id,
+                        status: DeviceStatus::Failed,
+                        error: Some(error),
+                        info: None,
+                    },
+                );
             }
         }
     }
 
     pub async fn mark_connected_and_emit(&self, node_id: u64) {
-        let changed = self.set_status(node_id, DeviceStatus::Connected, None).await;
+        let changed = self
+            .set_status(node_id, DeviceStatus::Connected, None)
+            .await;
         if changed {
             log::info!("status: node={} -> connected (recovery)", node_id);
             if let Some(app) = self.app_handle.get() {
-                emit_device_status(app, DeviceStatusDto {
-                    node_id,
-                    status: DeviceStatus::Connected,
-                    error: None,
-                    info: None,
-                });
+                emit_device_status(
+                    app,
+                    DeviceStatusDto {
+                        node_id,
+                        status: DeviceStatus::Connected,
+                        error: None,
+                        info: None,
+                    },
+                );
             }
         }
     }
@@ -244,7 +254,9 @@ impl AppState {
                 log::warn!("session defunct, reauthing: node={} err={}", node_id, e);
                 // Mark failed immediately so the UI stops showing Connected while
                 // we attempt recovery (which may take up to the 360 s reconnect budget).
-                state.mark_failed_and_emit(node_id, format!("session defunct: {}", e)).await;
+                state
+                    .mark_failed_and_emit(node_id, format!("session defunct: {}", e))
+                    .await;
 
                 // Serialize reauth with connect so concurrent callers don't race.
                 let connect_lock = Self::connect_lock_for(state, node_id);

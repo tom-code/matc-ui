@@ -87,7 +87,9 @@ pub async fn invoke_command(
     let dto = AppState::with_connection_retry(&state, node_id, |conn| {
         let payload = payload.clone();
         async move {
-            let msg = conn.invoke_request(endpoint, cluster, command, &payload).await?;
+            let msg = conn
+                .invoke_request(endpoint, cluster, command, &payload)
+                .await?;
             Ok(format_invoke_result(&msg.tlv))
         }
     })
@@ -127,7 +129,9 @@ pub async fn invoke_command_typed(
     let dto = AppState::with_connection_retry(&state, node_id, |conn| {
         let payload = payload.clone();
         async move {
-            let msg = conn.invoke_request(endpoint, cluster, command, &payload).await?;
+            let msg = conn
+                .invoke_request(endpoint, cluster, command, &payload)
+                .await?;
             Ok(format_invoke_result(&msg.tlv))
         }
     })

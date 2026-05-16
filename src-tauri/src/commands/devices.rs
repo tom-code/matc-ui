@@ -4,7 +4,7 @@ use matc::clusters::defs::*;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::state::{AppState, DeviceStatus, DeviceStatusDto, emit_device_status};
+use crate::state::{emit_device_status, AppState, DeviceStatus, DeviceStatusDto};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceDto {
@@ -24,7 +24,6 @@ pub struct DeviceInfoDto {
     pub sw_version: String,
     pub has_aggregator: bool,
 }
-
 
 /// Probe a single device: acquires the per-node probe lock, updates backend status,
 /// emits device://status events, and returns the DeviceInfoDto on success.
@@ -345,4 +344,3 @@ async fn read_has_aggregator(conn: &Arc<matc::controller::Connection>) -> bool {
     }
     false
 }
-

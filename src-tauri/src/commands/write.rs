@@ -93,7 +93,8 @@ pub async fn write_attribute(
     AppState::with_connection_retry(&state, node_id, |conn| {
         let data = buf.data.clone();
         async move {
-            conn.write_request(endpoint, cluster, attr_id, &data).await?;
+            conn.write_request(endpoint, cluster, attr_id, &data)
+                .await?;
             Ok(())
         }
     })

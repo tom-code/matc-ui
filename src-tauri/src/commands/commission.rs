@@ -46,7 +46,11 @@ pub async fn commission_by_code(
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
-    log::info!("commission_by_code: ok node={} addr={}", node_id, dev.address);
+    log::info!(
+        "commission_by_code: ok node={} addr={}",
+        node_id,
+        dev.address
+    );
     Ok(DeviceDto {
         node_id: dev.node_id,
         name: dev.name,
@@ -63,7 +67,12 @@ pub async fn commission_by_address(
     name: String,
 ) -> Result<DeviceDto, String> {
     let state = state.inner().clone();
-    log::info!("commission_by_address: node={} addr={} name={}", node_id, address, name);
+    log::info!(
+        "commission_by_address: node={} addr={} name={}",
+        node_id,
+        address,
+        name
+    );
     let conn = {
         let dm = &state.devman;
         dm.commission(&address, pin, node_id, &name)
@@ -84,7 +93,11 @@ pub async fn commission_by_address(
         .get_device(node_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "device not found after commission".to_string())?;
-    log::info!("commission_by_address: ok node={} addr={}", node_id, dev.address);
+    log::info!(
+        "commission_by_address: ok node={} addr={}",
+        node_id,
+        dev.address
+    );
     Ok(DeviceDto {
         node_id: dev.node_id,
         name: dev.name,
@@ -153,7 +166,11 @@ pub async fn open_commissioning_window(
     };
 
     let state = state.inner().clone();
-    log::info!("open_commissioning_window: node={} discriminator={}", node_id, discriminator);
+    log::info!(
+        "open_commissioning_window: node={} discriminator={}",
+        node_id,
+        discriminator
+    );
 
     let mut salt = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt);
@@ -185,7 +202,11 @@ pub async fn open_commissioning_window(
     })
     .await
     .map_err(|e| {
-        log::error!("open_commissioning_window failed: node={} err={}", node_id, e);
+        log::error!(
+            "open_commissioning_window failed: node={} err={}",
+            node_id,
+            e
+        );
         e.to_string()
     })?;
 

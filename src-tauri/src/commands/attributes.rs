@@ -142,7 +142,11 @@ pub async fn read_attribute_tree(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
-    log::debug!("read_attribute_tree: node={} force_refresh={}", node_id, force_refresh);
+    log::debug!(
+        "read_attribute_tree: node={} force_refresh={}",
+        node_id,
+        force_refresh
+    );
 
     if !force_refresh {
         if let Some(cached) = state.cache_get_attributes::<EndpointTree>(node_id).await {
@@ -162,8 +166,12 @@ pub async fn read_attribute_tree(
     });
 
     let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
-        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
-            .await
+        conn.read_request2(
+            0,
+            CLUSTER_ID_DESCRIPTOR,
+            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
+        )
+        .await
     })
     .await?;
     let conn = AppState::get_connection(&state, node_id)
@@ -353,7 +361,11 @@ pub async fn read_device_tree(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
-    log::debug!("read_device_tree: node={} force_refresh={}", node_id, force_refresh);
+    log::debug!(
+        "read_device_tree: node={} force_refresh={}",
+        node_id,
+        force_refresh
+    );
 
     if !force_refresh {
         if let Some(cached) = state.cache_get_device_tree::<EndpointTree>(node_id).await {
@@ -365,8 +377,12 @@ pub async fn read_device_tree(
     // EP 0 PartsList enumerates all other endpoints on the device
     let mut endpoint_ids: Vec<u16> = vec![0];
     let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
-        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
-            .await
+        conn.read_request2(
+            0,
+            CLUSTER_ID_DESCRIPTOR,
+            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
+        )
+        .await
     })
     .await?;
     if let TlvItemValue::List(items) = parts_tlv {
@@ -455,7 +471,10 @@ pub async fn read_device_tree(
             let info_attrs = [
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_VENDORNAME, "VendorName"),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTNAME, "ProductName"),
-                (CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTLABEL, "ProductLabel"),
+                (
+                    CLUSTER_BASIC_INFORMATION_ATTR_ID_PRODUCTLABEL,
+                    "ProductLabel",
+                ),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_NODELABEL, "NodeLabel"),
                 (CLUSTER_BASIC_INFORMATION_ATTR_ID_REACHABLE, "Reachable"),
             ];
@@ -506,7 +525,11 @@ pub async fn read_endpoint_structure(
     let force_refresh = force_refresh.unwrap_or(false);
     let state = state.inner().clone();
 
-    log::debug!("read_endpoint_structure: node={} force_refresh={}", node_id, force_refresh);
+    log::debug!(
+        "read_endpoint_structure: node={} force_refresh={}",
+        node_id,
+        force_refresh
+    );
 
     if !force_refresh {
         if let Some(cached) = state.cache_get_structure::<EndpointTree>(node_id).await {
@@ -517,8 +540,12 @@ pub async fn read_endpoint_structure(
 
     let mut endpoint_ids: Vec<u16> = vec![0];
     let parts_tlv = AppState::with_connection_retry(&state, node_id, |conn| async move {
-        conn.read_request2(0, CLUSTER_ID_DESCRIPTOR, CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST)
-            .await
+        conn.read_request2(
+            0,
+            CLUSTER_ID_DESCRIPTOR,
+            CLUSTER_DESCRIPTOR_ATTR_ID_PARTSLIST,
+        )
+        .await
     })
     .await?;
     if let TlvItemValue::List(items) = parts_tlv {
