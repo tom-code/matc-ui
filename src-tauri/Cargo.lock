@@ -2520,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "matc"
 version = "0.1.2"
-source = "git+https://github.com/tom-code/rust-matc.git?branch=main#b282bd71555ff51906b73399d2de7548244c13b3"
+source = "git+https://github.com/tom-code/rust-matc.git?branch=main#644dca443a13f06b196228e75f2ff652ab4ddac9"
 dependencies = [
  "aes",
  "anyhow",

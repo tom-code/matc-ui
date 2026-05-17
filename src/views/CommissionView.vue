@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { useDiscoveryStore } from '../stores/discovery'
@@ -11,7 +11,7 @@ const discoveryStore = useDiscoveryStore()
 const devicesStore = useDevicesStore()
 
 // Pairing code tab state
-type CodeTransport = 'network' | 'ble'
+type CodeTransport = 'network' | 'network_manual' | 'ble'
 const codeForm = ref({
   pairing_code: '',
   name: '',
@@ -19,12 +19,53 @@ const codeForm = ref({
   transport: 'network' as CodeTransport,
   wifi_ssid: '',
   wifi_password: '',
+  ip_address: '',
+  pin: 0,
 })
 const codeLoading = ref(false)
 const codeError = ref<string | null>(null)
 
+async function parsePinFromPairingCode(code: string): Promise<number | null> {
+  const trimmed = code.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = await invoke<{ passcode: number } | null>('parse_pairing_code', { code: trimmed })
+    return parsed?.passcode ?? null
+  } catch {
+    return null
+  }
+}
+
+function withDefaultPort(addr: string): string {
+  if (addr.startsWith('[')) return addr          // bracket form implies port present
+  const colonCount = (addr.match(/:/g) ?? []).length
+  if (colonCount > 1) return `[${addr}]:5540`   // bare IPv6, no port
+  if (colonCount === 1) return addr              // IPv4:port already
+  return `${addr}:5540`                          // IPv4, no port
+}
+
+function formatAddrWithPort(addr: string, port: number): string {
+  return addr.includes(':') ? `[${addr}]:${port}` : `${addr}:${port}`
+}
+
+watch(() => codeForm.value.pairing_code, async (code) => {
+  if (codeForm.value.transport !== 'network_manual') return
+  const pin = await parsePinFromPairingCode(code)
+  if (pin !== null) codeForm.value.pin = pin
+})
+
+watch(() => codeForm.value.transport, async (transport) => {
+  if (transport !== 'network_manual') return
+  const pin = await parsePinFromPairingCode(codeForm.value.pairing_code)
+  if (pin !== null) codeForm.value.pin = pin
+})
+
 const codeSubmitDisabled = computed(() => {
-  if (!codeForm.value.pairing_code || !codeForm.value.name) return true
+  if (!codeForm.value.name) return true
+  if (codeForm.value.transport === 'network_manual') {
+    return !codeForm.value.ip_address.trim() || codeForm.value.pin <= 0
+  }
+  if (!codeForm.value.pairing_code) return true
   if (codeForm.value.transport === 'ble' && !codeForm.value.wifi_ssid) return true
   return false
 })
@@ -33,20 +74,30 @@ async function submitByCode() {
   codeLoading.value = true
   codeError.value = null
   try {
-    const pairingCode = codeForm.value.pairing_code.trim()
     const name = codeForm.value.name.trim()
     const nodeId = codeForm.value.node_id
 
     if (codeForm.value.transport === 'ble') {
       await invoke('commission_ble', {
-        pairingCode,
+        pairingCode: codeForm.value.pairing_code.trim(),
         nodeId,
         name,
         wifiSsid: codeForm.value.wifi_ssid,
         wifiPassword: codeForm.value.wifi_password,
       })
+    } else if (codeForm.value.transport === 'network_manual') {
+      await invoke('commission_by_address', {
+        address: withDefaultPort(codeForm.value.ip_address.trim()),
+        pin: codeForm.value.pin,
+        nodeId,
+        name,
+      })
     } else {
-      await invoke('commission_by_code', { pairingCode, nodeId, name })
+      await invoke('commission_by_code', {
+        pairingCode: codeForm.value.pairing_code.trim(),
+        nodeId,
+        name,
+      })
     }
     await devicesStore.fetchDevices()
     router.push('/devices')
@@ -79,7 +130,7 @@ const commissioning = ref(false)
 const commissionError = ref<string | null>(null)
 
 function openCommission(device: DiscoveredDeviceDto) {
-  const allAddresses = device.addresses.map(a => `${a}:${device.port}`)
+  const allAddresses = device.addresses.map(a => formatAddrWithPort(a, device.port))
   commissionTarget.value = { addresses: allAddresses, address: allAddresses[0], isBle: false }
   commissionForm.value = { name: device.name ?? '', node_id: 300, pin: 0, pairing_code: '', wifi_ssid: '', wifi_password: '' }
   commissionError.value = null
@@ -132,13 +183,6 @@ async function doCommission() {
       <n-tab-pane name="code" tab="Pairing Code">
         <n-card style="max-width: 520px; margin-top: 12px">
           <n-form label-placement="top" @submit.prevent="submitByCode">
-            <n-form-item label="Pairing Code" required>
-              <n-input
-                v-model:value="codeForm.pairing_code"
-                placeholder="e.g. 0251-520-0076"
-                :disabled="codeLoading"
-              />
-            </n-form-item>
             <n-form-item label="Device Name" required>
               <n-input
                 v-model:value="codeForm.name"
@@ -154,12 +198,46 @@ async function doCommission() {
                 :disabled="codeLoading"
               />
             </n-form-item>
+            <n-form-item label="Pairing Code" required v-if="codeForm.transport !== 'network_manual'">
+              <n-input
+                v-model:value="codeForm.pairing_code"
+                placeholder="e.g. 0251-520-0076"
+                :disabled="codeLoading"
+              />
+            </n-form-item>
+
             <n-form-item label="Transport">
               <n-radio-group v-model:value="codeForm.transport" :disabled="codeLoading">
                 <n-radio-button value="network">Network (mDNS)</n-radio-button>
+                <n-radio-button value="network_manual">Network (manual)</n-radio-button>
                 <n-radio-button value="ble">BLE</n-radio-button>
               </n-radio-group>
             </n-form-item>
+
+            <template v-if="codeForm.transport === 'network_manual'">
+              <n-form-item label="Pairing Code (optional)">
+                <n-input
+                  v-model:value="codeForm.pairing_code"
+                  placeholder="Autofills PIN when entered"
+                  :disabled="codeLoading"
+                />
+              </n-form-item>
+              <n-form-item label="IP Address" required>
+                <n-input
+                  v-model:value="codeForm.ip_address"
+                  placeholder="e.g. 192.168.1.100:5540"
+                  :disabled="codeLoading"
+                />
+              </n-form-item>
+              <n-form-item label="PIN / Passcode" required>
+                <n-input-number
+                  v-model:value="codeForm.pin"
+                  :min="0"
+                  style="width: 100%"
+                  :disabled="codeLoading"
+                />
+              </n-form-item>
+            </template>
 
             <template v-if="codeForm.transport === 'ble'">
               <n-form-item label="Wi-Fi SSID" required>
@@ -182,6 +260,10 @@ async function doCommission() {
               <template v-if="codeForm.transport === 'ble'">
                 The device will be reached over Bluetooth and provisioned with the supplied Wi-Fi credentials.
                 Make sure Bluetooth is enabled and the device is in commissioning mode.
+              </template>
+              <template v-else-if="codeForm.transport === 'network_manual'">
+                The device will be reached directly at the supplied IP address without mDNS discovery.
+                Provide the PIN printed on the device or shown in its app.
               </template>
               <template v-else>
                 The device will be discovered automatically on the network using the pairing code discriminator.
@@ -240,7 +322,7 @@ async function doCommission() {
                     <n-tag v-if="dev.vendor_id" size="small" type="info">Vendor ID: {{ dev.vendor_id }}</n-tag>
                     <n-tag v-if="dev.product_id" size="small" type="info">Product ID: {{ dev.product_id }}</n-tag>
                     <n-tag v-for="addr in dev.addresses" :key="addr" size="small" type="default">
-                      IP: {{ addr }}:{{ dev.port }}
+                      IP: {{ formatAddrWithPort(addr, dev.port) }}
                     </n-tag>
                   </n-space>
                 </template>

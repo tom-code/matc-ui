@@ -1,7 +1,10 @@
+use std::sync::Arc;
 use std::time::Duration;
 
-use matc::discover;
 use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredDeviceDto {
@@ -28,15 +31,20 @@ pub struct BleDeviceDto {
 }
 
 #[tauri::command]
-pub async fn discover_mdns(timeout_secs: u64) -> Result<Vec<DiscoveredDeviceDto>, String> {
+pub async fn discover_mdns(
+    timeout_secs: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<DiscoveredDeviceDto>, String> {
     let timeout = Duration::from_secs(timeout_secs.clamp(2, 30));
-    let devices = discover::discover_commissionable(timeout)
+    let devices = state
+        .devman
+        .discover_commissionable_devices(timeout)
         .await
         .map_err(|e| e.to_string())?;
 
     let result: Vec<DiscoveredDeviceDto> = devices
         .into_iter()
-        .map(|d| DiscoveredDeviceDto {
+        .map(|(_target, d)| DiscoveredDeviceDto {
             instance: d.instance,
             device: d.device,
             addresses: d.ips.iter().map(|ip| ip.to_string()).collect(),

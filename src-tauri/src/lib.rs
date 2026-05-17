@@ -16,6 +16,7 @@ use commands::{
     },
     commission::{
         commission_ble, commission_by_address, commission_by_code, open_commissioning_window,
+        parse_pairing_code,
     },
     devices::{
         get_device_info, get_device_statuses, list_devices, probe_device, remove_device,
@@ -139,6 +140,7 @@ pub fn run() {
             commission_by_address,
             commission_ble,
             open_commissioning_window,
+            parse_pairing_code,
             read_attribute_tree,
             read_device_tree,
             read_endpoint_structure,

@@ -8,6 +8,33 @@ use crate::{
 };
 
 #[derive(serde::Serialize)]
+pub struct ParsedPairingCodeDto {
+    pub passcode: u32,
+    pub discriminator: u16,
+    pub is_short_discriminator: bool,
+    pub vendor_id: Option<u16>,
+    pub product_id: Option<u16>,
+}
+
+#[tauri::command]
+pub fn parse_pairing_code(code: String) -> Option<ParsedPairingCodeDto> {
+    let trimmed = code.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let info = matc::onboarding::decode_manual_pairing_code(trimmed)
+        .or_else(|_| matc::onboarding::decode_qr_payload(trimmed))
+        .ok()?;
+    Some(ParsedPairingCodeDto {
+        passcode: info.passcode,
+        discriminator: info.discriminator,
+        is_short_discriminator: info.is_short_discriminator,
+        vendor_id: info.vendor_id,
+        product_id: info.product_id,
+    })
+}
+
+#[derive(serde::Serialize)]
 pub struct OpenCommissioningWindowResultDto {
     pub status: u32,
     pub manual_pairing_code: String,

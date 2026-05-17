@@ -27,7 +27,7 @@ async function handleRefresh() {
 }
 
 function handleProbe(nodeId: number) {
-  store.fetchDeviceInfo(nodeId).catch(() => undefined)
+  store.fetchDeviceInfo(nodeId, true).catch(() => undefined)
 }
 
 const columns = computed<DataTableColumns<DeviceDto>>(() => [

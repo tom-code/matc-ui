@@ -48,6 +48,19 @@ Matter state (fabric config, device registry, certificates) is stored in a platf
 
 To reset the app to a clean state, delete that directory and relaunch.
 
+## IPv6
+
+By default the controller binds to `0.0.0.0:5555`, an IPv4-only socket.
+
+To commission or talk to devices over **IPv6** (for example a Thread border-routed device exposed only at a global IPv6 address), you need to switch the controller to an IPv6 socket:
+
+1. Quit the app.
+2. Open `config.json` inside the data directory listed above.
+3. Change `"local_address": "0.0.0.0:5555"` to `"local_address": "[::]:5555"`.
+4. Relaunch the app.
+
+The controller will then accept both IPv4 and IPv6 destinations.
+
 ## Usage
 
 ### Commissioning a device
